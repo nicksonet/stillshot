@@ -94,4 +94,46 @@ export const sfx = {
   pickup(): void {
     tone(500, 900, 0.08, 0.15, 'triangle');
   },
+  revolver(): void {
+    noiseBurst({ duration: 0.45, filter: 'lowpass', freq: 3500, freqEnd: 120, gain: 1.0 });
+    tone(110, 35, 0.35, 0.7, 'triangle');
+    tone(1400, 900, 0.05, 0.12, 'square', 0.12); // hammer click on the way back
+  },
+  smg(): void {
+    noiseBurst({ duration: 0.12, filter: 'lowpass', freq: 5000, freqEnd: 600, gain: 0.55 });
+    tone(220, 90, 0.08, 0.3, 'square');
+  },
+  glass(): void {
+    noiseBurst({ duration: 0.7, filter: 'highpass', freq: 4000, freqEnd: 9000, gain: 0.5, q: 0.5 });
+    tone(3200, 1400, 0.4, 0.12, 'sine');
+    tone(4100, 2000, 0.3, 0.08, 'sine', 0.05);
+  },
+  disarm(): void {
+    tone(700, 300, 0.06, 0.3, 'square');
+    noiseBurst({ duration: 0.08, filter: 'bandpass', freq: 1800, gain: 0.5, q: 3 });
+  },
 };
+
+let hum: { osc: OscillatorNode[]; gain: GainNode } | null = null;
+
+/** Low neon-sign hum; 0 turns it off. */
+export function ambience(level: number): void {
+  if (!ctx) return;
+  if (!hum) {
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    gain.connect(ctx.destination);
+    const osc = [60, 120, 181].map((f, i) => {
+      const o = ctx!.createOscillator();
+      o.type = i === 0 ? 'sine' : 'triangle';
+      o.frequency.value = f;
+      const g = ctx!.createGain();
+      g.gain.value = [0.5, 0.18, 0.06][i];
+      o.connect(g).connect(gain);
+      o.start();
+      return o;
+    });
+    hum = { osc, gain };
+  }
+  hum.gain.gain.setTargetAtTime(level * 0.05, ctx.currentTime, 0.5);
+}

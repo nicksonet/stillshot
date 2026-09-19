@@ -12,6 +12,8 @@ export interface Bullet {
   mesh: THREE.Group;
   trail: THREE.Mesh;
   dead: boolean;
+  /** Something this bullet passes through (the shooter's own hostage). */
+  ignore?: object;
 }
 
 const TRAIL_MAX = 2.2;
@@ -20,9 +22,11 @@ const MAX_RANGE = 70;
 const headGeo = new THREE.CylinderGeometry(0.014, 0.014, 0.07, 6).rotateX(Math.PI / 2);
 // Trail spans z = 0..1 behind the bullet (bullets fly along local -Z).
 const trailGeo = new THREE.CylinderGeometry(0.003, 0.014, 1, 6, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
-const headMat = new THREE.MeshBasicMaterial({ color: 0x151515 });
-const enemyTrailMat = new THREE.MeshBasicMaterial({ color: 0xff4a3a, transparent: true, opacity: 0.55, depthWrite: false });
-const playerTrailMat = new THREE.MeshBasicMaterial({ color: 0x505860, transparent: true, opacity: 0.35, depthWrite: false });
+const headMat = new THREE.MeshBasicMaterial({ color: 0xfff2e0, fog: false });
+const trail = (color: number, opacity: number) =>
+  new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+const enemyTrailMat = trail(0xff3344, 0.8);
+const playerTrailMat = trail(0x19f0ff, 0.6);
 const FORWARD = new THREE.Vector3(0, 0, -1);
 
 export class Bullets {

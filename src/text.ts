@@ -27,7 +27,7 @@ export class TextPanel {
   }
 
   /** Big title line plus an optional small subtitle. */
-  show(title: string, sub = '', color = '#e8281c'): void {
+  show(title: string, sub = '', color = '#ff2bd6'): void {
     const key = `${title}|${sub}|${color}`;
     this.mesh.visible = true;
     if (key === this.current) return;
@@ -42,18 +42,24 @@ export class TextPanel {
       size -= 10;
       g.font = `italic 900 ${size}px "Arial Black", Arial, sans-serif`;
     }
+    // Neon tube: coloured glow and outline around a white-hot core.
+    const y = sub ? 150 : 192;
+    g.shadowColor = color;
+    g.shadowBlur = 36;
     g.lineWidth = 10;
-    g.strokeStyle = 'rgba(255,255,255,0.85)';
-    g.strokeText(title, 512, sub ? 150 : 192);
-    g.fillStyle = color;
-    g.fillText(title, 512, sub ? 150 : 192);
+    g.strokeStyle = color;
+    g.strokeText(title, 512, y);
+    g.shadowBlur = 14;
+    g.fillStyle = '#ffffff';
+    g.fillText(title, 512, y);
     if (sub) {
       g.font = '600 44px Arial, sans-serif';
-      g.lineWidth = 8;
-      g.strokeText(sub, 512, 300);
-      g.fillStyle = '#1a1a1a';
+      g.shadowColor = '#19f0ff';
+      g.shadowBlur = 16;
+      g.fillStyle = '#d8faff';
       g.fillText(sub, 512, 300);
     }
+    g.shadowBlur = 0;
     this.tex.needsUpdate = true;
   }
 
