@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import type { Figure } from './figure';
 
 interface Chunk {
   obj: THREE.Object3D;
@@ -8,7 +7,6 @@ interface Chunk {
   life: number;
 }
 
-const _c = new THREE.Vector3();
 const _p = new THREE.Vector3();
 
 /** Body parts of a shattered person tumbling away. Moves in game time. */
@@ -21,12 +19,11 @@ export class Debris {
     return this.list.length;
   }
 
-  /** Break the figure apart; parts closest to the hit point fly hardest. */
-  explode(fig: Figure, push: THREE.Vector3, hit: THREE.Vector3): void {
-    fig.chestMark.getWorldPosition(_c);
-    for (const obj of fig.breakApart(this.scene)) {
+  /** Send the parts flying from `center`; parts closest to the hit point fly hardest. */
+  explode(parts: THREE.Object3D[], center: THREE.Vector3, push: THREE.Vector3, hit: THREE.Vector3): void {
+    for (const obj of parts) {
       obj.getWorldPosition(_p);
-      const out = _p.clone().sub(_c).setY(0);
+      const out = _p.clone().sub(center).setY(0);
       if (out.lengthSq() < 1e-4) out.set(Math.random() - 0.5, 0, Math.random() - 0.5);
       out.normalize();
       const near = 1 / (0.35 + _p.distanceTo(hit));

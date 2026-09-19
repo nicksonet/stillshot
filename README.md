@@ -13,7 +13,9 @@ Every push to `main` is deployed there automatically (GitHub Actions → Pages).
   The boss lies at your feet, two bodyguards kneel at his head and feet; gangsters burst in through the kitchen, then the street door.
   Diners panic (duck or flee); hostage-takers grab a diner and lean out to shoot.
 - Levels 2–5 in neon cyberpunk: Neon Alley, Rooftop, Data Center, Nightclub.
-- Faceted, volumetric low-poly people (suits, faces, hats); shot bodies break into head, torso and limbs.
+- People are generated with Tripo3D (image → 3D → auto-rig → preset clips): gangsters, diners, the boss and his guards.
+  `person.ts` finds each skeleton by shape, plays clips in game time and bends bones for sitting, cowering, kneeling,
+  hands up, lying down and aiming; a shot body is baked in its pose and breaks into head, torso and limbs.
 - Enemies: gunner, rifleman (SMG bursts), brawler, hostage-taker; bladed shooting stance, side-steps, cover behind civilians,
   and they target you, the boss and his guards.
 - Weapons: revolver (start), pistol, SMG; disarm, throw, punch, block bullets with your gun, shoot bullets out of the air.
@@ -22,17 +24,29 @@ Every push to `main` is deployed there automatically (GitHub Actions → Pages).
 
 **Left / next**
 - Play-test on a real Quest: gun grip angle, time-scale feel, comfort, frame rate.
-- Restaurant art pass with generated assets (style references, signage) — Tripo3D needs credits.
+- More generated assets while credits last (565 left): enemy variants, a bodyguard model, restaurant props; trim if the Quest frame rate suffers.
+- The boss's generated clips are unusable (bad retarget); he is posed from the bind pose. Re-rig if he ever needs to move.
 - Neon levels: same care as the restaurant (layouts, props, lighting).
 - Hand tracking, more enemy behaviours (flanking, grenades), difficulty curve.
 
 ## Assets
 
-Generated with `tools/asset-gen.mjs` (see `.claude/skills/asset-gen/SKILL.md`). Everything in the game today is procedural.
+Generated with `tools/asset-gen.mjs` (see `.claude/skills/asset-gen/SKILL.md`), optimized for the Quest with
+`tools/optimize-models.mjs` (simplify, matte material, meshopt compression). Sources in `assets/`, game files in `public/models/`.
+Reference images: OpenRouter `gemini-3.1-flash-image`, about 7¢ each. Tripo3D: model 30, rig 25, clip 10 credits (100 credits = $1).
+The rest of the game (restaurant, neon levels, guns, props) is procedural.
 
 | Name | Description | Size | Path | Cost |
 |---|---|---|---|---|
-| — | none yet | — | — | — |
+| gangster | enemy: black suit, white shirt, red tie, sunglasses; clips idle, walk, run, shoot, hurt | 1.8 m, 8.9k tris, 561 KB | `public/models/gangster.glb` | 7¢ + 105 cr |
+| boss | the boss: mustard double-breasted suit, gold chain; posed only (clips unusable) | 1.8 m, 8.7k tris, 473 KB | `public/models/boss.glb` | 7¢ + 85 cr |
+| diner-man | diner and bodyguard: brown three-piece suit; clips idle, walk, run, hurt | 1.8 m, 8.6k tris, 486 KB | `public/models/diner-man.glb` | 7¢ + 95 cr |
+| diner-woman | diner: burgundy trouser suit; clips idle, walk, run, hurt (source `diner-woman2`) | 1.75 m, 12.7k tris, 584 KB | `public/models/diner-woman.glb` | 7¢ + 95 cr |
+| diner-woman (v1) | discarded: the dress broke the auto-rig (one arm, two-bone legs) | — | deleted | 7¢ + 95 cr |
+| revolver | revolver reference model (viewer only; the in-game guns are procedural) | 0.24 m, 2.3k tris, 236 KB | `public/models/revolver.glb` | 7¢ + 30 cr |
+| lost task | a model generated while the tool could not save the task id | — | — | 30 cr |
+
+Spent so far: about $0.40 on OpenRouter and 535 Tripo3D credits.
 
 ## Controls
 
@@ -72,9 +86,9 @@ npm run proof      # bot plays on the real GPU; review proof/sheet.png, proof/pr
 | `spawner.ts` | waves, scripted entrances, hostage-takers |
 | `debug.ts` | `window.__game` for tests, the proof bot and the console |
 | `time.ts` | time scale driven by head and hand motion |
-| `body.ts`, `figure.ts` | faceted lofted people on an articulated rig, baked one mesh per part |
+| `person.ts` | generated people: skeleton found by shape, clips in game time, poses, aiming, break-apart |
 | `enemy.ts`, `civilian.ts` | gangsters (AI, stances, hostages); diners, the boss and his guards |
-| `weapons.ts` | revolver, pistol, SMG |
+| `weapons.ts`, `pieces.ts` | revolver, pistol, SMG built from baked pieces |
 | `levels.ts`, `props.ts`, `world.ts`, `theme.ts` | level data; geometry merged per material in two styles (clay, neon); baked shadows |
 | `bullets.ts`, `shards.ts`, `debris.ts`, `shadows.ts` | bullets, shatter shards, body-part debris, blob shadows |
 | `audio.ts`, `music.ts`, `text.ts` | procedural sound and music, 3D text |

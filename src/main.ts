@@ -1,4 +1,5 @@
 import { Game } from './game';
+import { loadPeople } from './person';
 
 async function boot(): Promise<void> {
   // ?emu turns on a software Quest 3 (IWER) so VR can be tested without a headset.
@@ -6,6 +7,7 @@ async function boot(): Promise<void> {
     const { installEmulator } = await import('./emulator');
     await installEmulator();
   }
+  await loadPeople();
   const game = new Game(document.getElementById('app')!);
   (window as unknown as { __game: unknown }).__game = game.debugApi();
 }

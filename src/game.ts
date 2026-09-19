@@ -246,13 +246,13 @@ export class Game {
 
   private addCivilian(c: Civilian): void {
     this.civilians.push(c);
-    this.scene.add(c.fig.root);
+    this.scene.add(c.body.root);
   }
 
   private clearDynamic(): void {
     for (const e of this.enemies) this.scene.remove(e.group);
     this.enemies = [];
-    for (const c of this.civilians) this.scene.remove(c.fig.root);
+    for (const c of this.civilians) this.scene.remove(c.body.root);
     this.civilians = [];
     this.vip = null;
     this.vr.clear();
@@ -332,12 +332,14 @@ export class Game {
     if (this.state === 'playing' || this.state === 'failed') for (const e of this.enemies) e.update(gdt, ctx);
     for (const c of this.civilians) {
       c.update(gdt, this.world);
-      if (c.gone && c.fig.root.parent) this.scene.remove(c.fig.root);
+      if (c.gone && c.body.root.parent) this.scene.remove(c.body.root);
     }
     this.combat.update(gdt, realDt);
     this.shadows.update([
-      ...this.enemies.filter((e) => e.alive).map((e) => ({ fig: e.fig })),
-      ...this.civilians.filter((c) => c.alive && !c.gone).map((c) => ({ fig: c.fig, lying: c.state === 'prone' })),
+      ...this.enemies.filter((e) => e.alive).map((e) => ({ root: e.group, pelvis: e.spheres[2].c, head: e.spheres[0].c })),
+      ...this.civilians
+        .filter((c) => c.alive && !c.gone)
+        .map((c) => ({ root: c.body.root, pelvis: c.spheres[2].c, head: c.spheres[0].c, lying: c.state === 'prone' })),
     ]);
 
     if (this.state === 'playing' && this.spawner.done) {

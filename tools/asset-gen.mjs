@@ -133,8 +133,10 @@ async function finish(keys, taskId, out, kind) {
 }
 
 function startTask(out, kind, taskId) {
+  // Log first: if saving the sidecar fails, the id is still recoverable from the output.
+  log(`${kind} submitted: ${taskId}`);
+  ensureDir(out);
   writeFileSync(sidecar(out), JSON.stringify({ task_id: taskId, kind }, null, 2));
-  log(`${kind} submitted: ${taskId} (sidecar ${basename(sidecar(out))})`);
 }
 
 function taskOf(file) {
@@ -171,6 +173,7 @@ async function rig(opts, keys) {
   if (existsSync(sidecar(opts.out))) return finish(keys, taskOf(opts.out), opts.out, 'rig');
   const taskId = await submit(keys, {
     type: 'animate_rig',
+    model_version: 'v2.5-20260210',
     original_model_task_id: taskOf(opts.from),
     out_format: 'glb',
     rig_type: opts.type ?? 'biped',
@@ -181,14 +184,18 @@ async function rig(opts, keys) {
 }
 
 async function anim(opts, keys) {
-  if (!opts.from || !opts.animation || !opts.out) fail('usage: anim --from rigged.glb --animation preset:biped:walk -o walk.glb');
+  const list = String(opts.animations ?? opts.animation ?? '').split(',').filter(Boolean);
+  if (!opts.from || !list.length || !opts.out) fail('usage: anim --from rigged.glb --animations preset:idle,preset:walk -o clips.glb (10 credits each, max 5)');
+  if (list.length > 5) fail('at most 5 animations per task');
   if (existsSync(sidecar(opts.out))) return finish(keys, taskOf(opts.out), opts.out, 'anim');
   const taskId = await submit(keys, {
     type: 'animate_retarget',
     original_model_task_id: taskOf(opts.from),
     out_format: 'glb',
-    animation: opts.animation,
+    ...(list.length === 1 ? { animation: list[0] } : { animations: list }),
     bake_animation: true,
+    export_with_geometry: true,
+    animate_in_place: true,
   });
   startTask(opts.out, 'anim', taskId);
   return finish(keys, taskId, opts.out, 'anim');

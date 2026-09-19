@@ -7,8 +7,8 @@ Stack: **three.js** (`three`, addons from `three/addons/...`), **Vite**, **TypeS
 - `index.html` — overlay (ENTER VR / desktop play) and the canvas; `src/main.ts` boots `Game` and exposes `window.__game` (debug API).
 - `src/game.ts` — session: state machine (menu → playing → failed/cleared → won), frame loop, level loading.
   Subsystems: `combat.ts` (bullets, hits, deaths, loose guns), `input/vr.ts`, `input/desktop.ts`, `spawner.ts`, `debug.ts`.
-- Content: `levels.ts` (data), `props.ts` + `world.ts` (static geometry merged per material, colliders), `body.ts` + `figure.ts`
-  (faceted lofted people on an articulated rig), `enemy.ts`, `civilian.ts`, `weapons.ts`, `theme.ts` (styles: `clay`, `neon`).
+- Content: `levels.ts` (data), `props.ts` + `world.ts` (static geometry merged per material, colliders), `person.ts`
+  (generated rigged people from `public/models/`, loaded once by `loadPeople()` before the game starts), `enemy.ts`, `civilian.ts`, `weapons.ts`, `theme.ts` (styles: `clay`, `neon`).
 - Time: game systems move by `gdt = realDt * timeScale`; the player moves in real time. `time.ts` maps motion to time scale.
 
 ## Run
@@ -36,3 +36,13 @@ accept the self-signed certificate, ENTER VR. `npm run build` is a compile gate 
   converted with `toNonIndexed()` and lose `uv`; lofted pieces arrive pre-coloured and keep their colours in `bake()`.
 - WebXR camera pose is applied by three during `render()`; read the head from `camera.getWorldPosition` after the frame.
 - Bullets use swept segments (prev→pos) against spheres/boxes, so fast shots at low frame rates don't tunnel.
+
+## Generated characters (Tripo3D)
+
+- Bone names are not reliable: `Head_0` is the neck in one rig and the head in another, and legs hang off the root or the
+  hips. `Person` finds head, chest, arms, legs and hips by shape (highest chain, branch points, lowest leaves).
+- The auto-rigger sometimes weights hip skin to a finger where the hand rests. `Person` poses each model once at load and
+  drops triangles that stretch past 22 cm; `viewer.html?people=...` reports any that remain (`stretched`).
+- Dresses and long coats break the rig (one arm chain, two-bone legs): generate trousers. Check the bone tree before paying for clips.
+- Retargeted clips can be broken (the boss bends double): look at them in the viewer; list such models in `NO_CLIPS`.
+- Models are meshopt-compressed: every `GLTFLoader` needs `setMeshoptDecoder(MeshoptDecoder)`.

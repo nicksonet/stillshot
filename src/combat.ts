@@ -164,8 +164,8 @@ export class Combat {
     this.shards.burst(hit, 8, RED, 2.5, 0.04, 0.1, impulse);
     const w = e.takeWeapon();
     if (w) this.release(w, new THREE.Vector3((Math.random() - 0.5) * 1.5, 2, (Math.random() - 0.5) * 1.5), false);
-    this.debris.explode(e.fig, impulse, hit);
-    this.g.scene.remove(e.group);
+    const center = e.spheres[1].c.clone();
+    this.debris.explode(e.body.breakApart(this.g.scene), center, impulse, hit);
     sfx.shatter();
     this.g.time.kick(0.2);
   }
@@ -178,8 +178,8 @@ export class Combat {
     const hit = (at ?? c.spheres[1].c).clone();
     const impulse = push.clone().setY(0).normalize().multiplyScalar(2.5);
     this.shards.burst(hit, 20, c.vip ? VIP_SHARDS : CIV_SHARDS, 2.2, 0.05, 0.12, impulse);
-    this.debris.explode(c.fig, impulse, hit);
-    this.g.scene.remove(c.fig.root);
+    const center = c.spheres[1].c.clone();
+    this.debris.explode(c.body.breakApart(this.g.scene), center, impulse, hit);
     sfx.glass();
     if (c.vip) this.g.fail('vip');
     else if (byPlayer) this.g.fail('civilian');

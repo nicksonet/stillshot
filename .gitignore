@@ -8,3 +8,4 @@ proof/
 # Secrets (API keys for asset generation) — never commit.
 .env
 .env.*
+shots/

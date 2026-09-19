@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { G, bake } from './figure';
+import { G, bake } from './pieces';
 import { NEON, halo, neonMat } from './theme';
 
 export type WeaponKind = 'revolver' | 'pistol' | 'smg';

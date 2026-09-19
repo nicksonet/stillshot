@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import type { Figure } from './figure';
 
 const MAX = 48;
 
@@ -49,17 +48,17 @@ export class BlobShadows {
   }
 
   /** Standing people get a round shadow; someone lying down gets one stretched along the body. */
-  update(figures: { fig: Figure; lying?: boolean }[]): void {
+  update(people: { root: THREE.Object3D; pelvis: THREE.Vector3; head: THREE.Vector3; lying?: boolean }[]): void {
     let n = 0;
-    for (const { fig, lying } of figures) {
+    for (const { root, pelvis, head, lying } of people) {
       if (n >= MAX) break;
-      fig.pelvisMark.getWorldPosition(_p);
+      _p.copy(pelvis);
       _p.y = 0.012;
       if (lying) {
         // Centred between feet and head, stretched along the body.
-        fig.headMark.getWorldPosition(_h);
-        _p.set((_h.x + fig.root.position.x) / 2, 0.012, (_h.z + fig.root.position.z) / 2);
-        _e.set(0, fig.root.rotation.y, 0);
+        _h.copy(head);
+        _p.set((_h.x + root.position.x) / 2, 0.012, (_h.z + root.position.z) / 2);
+        _e.set(0, root.rotation.y, 0);
         _s.set(0.75, 1, 2.0);
       } else {
         _e.set(0, 0, 0);
