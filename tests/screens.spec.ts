@@ -33,6 +33,14 @@ test('screenshot tour', async ({ page }) => {
   // Wait for the level title to fade.
   await page.waitForTimeout(2800);
   await page.screenshot({ path: 'test-results/shot-enemies.png' });
+  // Portrait: the gunner's head and chest from close up.
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.spawnEnemy('gunner', 0.1, 0.25);
+    g.aimAtEnemy(g.enemies().length - 1, 0);
+  });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: 'test-results/shot-portrait.png' });
   await page.evaluate(() => (window as any).__game.aimAtEnemy(3, 1));
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'test-results/shot-brawler.png' });
