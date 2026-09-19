@@ -26,9 +26,12 @@ export class TextPanel {
     return this.mesh.visible ? this.current : '';
   }
 
+  /** neon: glowing tubes (cyberpunk levels); flat: solid red lettering on light scenes. */
+  style: 'neon' | 'flat' = 'neon';
+
   /** Big title line plus an optional small subtitle. */
   show(title: string, sub = '', color = '#ff2bd6'): void {
-    const key = `${title}|${sub}|${color}`;
+    const key = `${title}|${sub}|${color}|${this.style}`;
     this.mesh.visible = true;
     if (key === this.current) return;
     this.current = key;
@@ -42,8 +45,21 @@ export class TextPanel {
       size -= 10;
       g.font = `italic 900 ${size}px "Arial Black", Arial, sans-serif`;
     }
-    // Neon tube: coloured glow and outline around a white-hot core.
     const y = sub ? 150 : 192;
+    if (this.style === 'flat') {
+      // SUPERHOT-style: solid red title, dark subtitle, no glow.
+      g.shadowBlur = 0;
+      g.fillStyle = '#d7281c';
+      g.fillText(title, 512, y);
+      if (sub) {
+        g.font = '600 44px Arial, sans-serif';
+        g.fillStyle = '#3a342e';
+        g.fillText(sub, 512, 300);
+      }
+      this.tex.needsUpdate = true;
+      return;
+    }
+    // Neon tube: coloured glow and outline around a white-hot core.
     g.shadowColor = color;
     g.shadowBlur = 36;
     g.lineWidth = 10;

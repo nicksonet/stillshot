@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { circleHitsBox, segmentBox } from './collide';
 import type { LevelDef } from './levels';
 import { Builder, buildProp, kitFor } from './props';
-import { NEON, THEMES, floorTexture, halo, signTexture, windowTexture } from './theme';
+import { CLAY, NEON, THEMES, floorTexture, halo, signTexture, windowTexture } from './theme';
 
 const BILLBOARDS: [string, number][] = [
   ['NEON DREAMS', NEON.magenta],
@@ -11,6 +11,54 @@ const BILLBOARDS: [string, number][] = [
   ['ZERO HOUR', NEON.amber],
   ['HYPERION', NEON.green],
 ];
+
+/**
+ * Clay floor with baked contact shadows: every collider and footprint darkens the floor
+ * around it, a wide soft pass plus a tight one at the contact. Done once per level load.
+ */
+function bakeFloor(cx: number, cz: number, size: number, b: Builder): THREE.CanvasTexture {
+  const N = 1024;
+  const ppm = N / size; // pixels per metre
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d')!;
+  g.fillStyle = CLAY.floor;
+  g.fillRect(0, 0, N, N);
+  // Texture u runs along +x, v along -z (plane rotated -90° about X).
+  const rect = (x: number, z: number, w: number, d: number) =>
+    [(x - w / 2 - (cx - size / 2)) * ppm, (z - d / 2 - (cz - size / 2)) * ppm, w * ppm, d * ppm] as const;
+  const shapes: [number, number, number, number, number][] = [
+    ...b.boxes.map((box): [number, number, number, number, number] => [
+      (box.min.x + box.max.x) / 2,
+      (box.min.z + box.max.z) / 2,
+      box.max.x - box.min.x,
+      box.max.z - box.min.z,
+      Math.min(1, box.max.y / 1.2),
+    ]),
+    ...b.footprints,
+  ];
+  // Draw all footprints sharp onto a layer, then blur the whole layer once per pass
+  // (blurring shape by shape is hundreds of full blurs and stalls level loading).
+  const layer = document.createElement('canvas');
+  layer.width = layer.height = N;
+  const l = layer.getContext('2d')!;
+  const pass = (blur: number, grow: number, alpha: number) => {
+    l.clearRect(0, 0, N, N);
+    for (const [x, z, w, d, s] of shapes) {
+      l.fillStyle = CLAY.shadow.replace('ALPHA', String(alpha * s));
+      l.fillRect(...rect(x, z, w + grow, d + grow));
+    }
+    g.filter = `blur(${Math.max(1, blur * ppm)}px)`;
+    g.drawImage(layer, 0, 0);
+    g.filter = 'none';
+  };
+  pass(0.35, 0.3, 0.22); // soft, wide occlusion
+  pass(0.06, 0.04, 0.35); // tight contact shadow
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
 
 /** Static level geometry, lighting and collision queries. */
 export class World {
@@ -89,12 +137,8 @@ export class World {
     this.bounds = level.bounds;
     const [x0, z0, x1, z1] = level.bounds;
     const size = Math.max(x1 - x0, z1 - z0) + 4;
-    const fm = this.floor.material as THREE.MeshLambertMaterial;
-    fm.map?.dispose();
-    fm.map = floorTexture(theme, Math.round(size / 1.2));
-    fm.needsUpdate = true;
-    this.floor.scale.set(size, size, 1);
-    this.floor.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
+    const cx = (x0 + x1) / 2;
+    const cz = (z0 + z1) / 2;
 
     this.levelGroup.traverse((o) => {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
@@ -105,6 +149,13 @@ export class World {
     for (const p of level.props) buildProp(b, p, kit);
     this.levelGroup.add(b.build());
     this.boxes = b.boxes;
+
+    const fm = this.floor.material as THREE.MeshLambertMaterial;
+    fm.map?.dispose();
+    fm.map = theme.style === 'clay' ? bakeFloor(cx, cz, size, b) : floorTexture(theme, Math.round(size / 1.2));
+    fm.needsUpdate = true;
+    this.floor.scale.set(size, size, 1);
+    this.floor.position.set(cx, 0, cz);
   }
 
   /** First obstacle hit along the segment, as a fraction of it, or -1. Also hits the floor. */

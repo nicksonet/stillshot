@@ -3,3 +3,8 @@ dist/
 test-results/
 playwright-report/
 *.log
+proof/
+*.tripo.json
+# Secrets (API keys for asset generation) — never commit.
+.env
+.env.*

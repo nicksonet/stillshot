@@ -143,9 +143,10 @@ function restaurant(): LevelDef {
     ],
     civilians: seated,
     vip: [0.9, 0.35, Math.PI / 2],
+    // At the boss's head and feet, so they don't block the player's view.
     guards: [
-      [-0.15, -0.3, 0],
-      [1.35, 0.95, Math.atan2(-1.1, -0.6)],
+      [-1.45, 0.45, Math.PI / 2],
+      [1.55, 0.25, -Math.PI / 2],
     ],
     // They burst in through the kitchen first, then the street door.
     introSpawns: [

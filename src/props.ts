@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Prop } from './levels';
-import { NEON, PASTEL, halo, haloMat, neonMat, signTexture, type Style } from './theme';
+import { CLAY, NEON, halo, haloMat, neonMat, signTexture, type Style } from './theme';
 
 const phong = (color: number, shininess = 40, extra: THREE.MeshPhongMaterialParameters = {}) =>
   new THREE.MeshPhongMaterial({ color, flatShading: true, shininess, ...extra });
@@ -17,7 +17,7 @@ interface Kit {
   glass: THREE.Material;
   server: THREE.Material;
   cloths: THREE.Material[];
-  /** Accent for a given neon colour: the tube itself, or its pastel counterpart. */
+  /** Accent for a given neon colour: the tube itself, or its clay counterpart. */
   accent(color: number): THREE.Material;
 }
 
@@ -34,37 +34,27 @@ const NEON_KIT: Kit = {
   accent: neonMat,
 };
 
-const PASTEL_OF: Record<number, number> = {
-  [NEON.cyan]: PASTEL.mint,
-  [NEON.magenta]: PASTEL.pink,
-  [NEON.violet]: PASTEL.lavender,
-  [NEON.amber]: PASTEL.butter,
-  [NEON.green]: PASTEL.sage,
-  [NEON.red]: PASTEL.salmon,
-  [NEON.white]: PASTEL.linen,
-};
-const pastelCache = new Map<number, THREE.Material>();
+// Clay: one warm off-white family; objects differ only in value, form comes from light and baked shadow.
+const clayMat = (color: number) => new THREE.MeshLambertMaterial({ color });
+const CLAY_TONES = [CLAY.base, CLAY.light, CLAY.mid];
+const clayAccents = CLAY_TONES.map(clayMat);
 
-const PASTEL_KIT: Kit = {
-  style: 'pastel',
-  wall: new THREE.MeshLambertMaterial({ color: PASTEL.cream }),
-  trim: phong(PASTEL.woodDark, 60, { specular: 0x806050 }),
-  wood: phong(PASTEL.wood, 70, { specular: 0x9a7a60 }),
-  metal: phong(PASTEL.brass, 110, { specular: 0xfff0c0, emissive: 0x2a1c00 }),
-  cushion: phong(PASTEL.mint, 20),
-  glass: new THREE.MeshPhongMaterial({ color: 0xe8f6ff, transparent: true, opacity: 0.18, shininess: 120, depthWrite: false }),
-  server: phong(0x5a5a60, 40),
-  cloths: [phong(PASTEL.linen, 10), phong(PASTEL.pink, 10), phong(PASTEL.powder, 10)],
-  accent(color: number) {
-    const c = PASTEL_OF[color] ?? color;
-    let m = pastelCache.get(c);
-    if (!m) pastelCache.set(c, (m = phong(c, 25)));
-    return m;
-  },
+const CLAY_KIT: Kit = {
+  style: 'clay',
+  wall: clayMat(CLAY.wall),
+  trim: clayMat(CLAY.dark),
+  wood: clayMat(CLAY.mid),
+  metal: clayMat(CLAY.mid),
+  cushion: clayMat(CLAY.base),
+  glass: new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, shininess: 120, depthWrite: false }),
+  server: clayMat(CLAY.mid),
+  cloths: [clayMat(CLAY.light)],
+  // Neon accent colours all fold into the same few tones.
+  accent: (color: number) => clayAccents[color % CLAY_TONES.length],
 };
 
 export function kitFor(style: Style): Kit {
-  return style === 'pastel' ? PASTEL_KIT : NEON_KIT;
+  return style === 'clay' ? CLAY_KIT : NEON_KIT;
 }
 
 const _o = new THREE.Object3D();
@@ -76,6 +66,12 @@ const _o = new THREE.Object3D();
 export class Builder {
   readonly boxes: THREE.Box3[] = [];
   readonly objects: THREE.Object3D[] = [];
+  /** Extra floor-shadow footprints (x, z, width, depth, strength) for things that aren't colliders. */
+  readonly footprints: [number, number, number, number, number][] = [];
+
+  shadow(x: number, z: number, w: number, d: number, strength = 1): void {
+    this.footprints.push([x, z, w, d, strength]);
+  }
   private groups = new Map<THREE.Material, THREE.BufferGeometry[]>();
 
   add(mat: THREE.Material, geo: THREE.BufferGeometry, x: number, y: number, z: number, ry = 0, rx = 0, rz = 0): void {
@@ -140,15 +136,15 @@ function hash(x: number, z: number): number {
 }
 
 export function buildProp(b: Builder, p: Prop, k: Kit): void {
-  const pastel = k.style === 'pastel';
+  const clay = k.style === 'clay';
   switch (p.t) {
     case 'room': {
       const w = p.x1 - p.x0;
       const d = p.z1 - p.z0;
       const cx = (p.x0 + p.x1) / 2;
       const cz = (p.z0 + p.z1) / 2;
-      b.box(pastel ? k.wall : k.trim, cx, p.h + 0.05, cz, w, 0.1, d);
-      if (pastel) {
+      b.box(clay ? k.wall : k.trim, cx, p.h + 0.05, cz, w, 0.1, d);
+      if (clay) {
         // Coffered ceiling beams.
         for (let x = p.x0 + 2; x < p.x1 - 0.5; x += 2.7) b.box(k.wood, x, p.h - 0.06, cz, 0.16, 0.12, d);
         for (let z = p.z0 + 2; z < p.z1 - 0.5; z += 2.7) b.box(k.wood, cx, p.h - 0.08, z, w, 0.1, 0.12);
@@ -175,7 +171,13 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
       };
       if (alongX) b.box(k.wall, cx, p.h / 2, cz, len, p.h, t);
       else b.box(k.wall, cx, p.h / 2, cz, t, p.h, len);
-      if (pastel) {
+      if (clay) {
+        // Baked occlusion: the wall darkens softly towards the floor.
+        for (const side of [-1, 1]) {
+          const off = side * (t / 2 + 0.045);
+          if (alongX) b.add(aoStripMat, new THREE.PlaneGeometry(len, 0.7), cx, 0.35, cz + off, side > 0 ? 0 : Math.PI);
+          else b.add(aoStripMat, new THREE.PlaneGeometry(len, 0.7), cx + off, 0.35, cz, side > 0 ? Math.PI / 2 : -Math.PI / 2);
+        }
         strip(k.accent(color), 0.55, 1.1, 0.02); // wainscot panelling
         strip(k.trim, 1.12, 0.06, 0.05); // chair rail
         strip(k.trim, 0.07, 0.14, 0.04); // skirting
@@ -199,9 +201,9 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
     case 'window': {
       const len = p.x1 - p.x0;
       const cx = (p.x0 + p.x1) / 2;
-      const frame = pastel ? k.accent(NEON.white) : k.metal;
+      const frame = clay ? k.accent(NEON.white) : k.metal;
       b.box(k.wall, cx, 0.4, p.z, len, 0.8, 0.25);
-      if (pastel) {
+      if (clay) {
         b.box(k.accent(NEON.cyan), cx, 0.4, p.z - 0.135, len, 0.8, 0.02);
         b.box(k.wood, cx, 0.82, p.z - 0.05, len, 0.05, 0.4); // sill
       } else b.box(neonMat(NEON.cyan), cx, 0.81, p.z - 0.13, len, 0.02, 0.02);
@@ -213,9 +215,10 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
       break;
     }
     case 'table': {
+      b.shadow(p.x, p.z, 0.55, 0.55, 1);
       b.cyl(k.metal, p.x, 0.02, p.z, 0.3, 0.3, 0.04, 16);
       b.cyl(k.metal, p.x, 0.38, p.z, 0.05, 0.08, 0.72, 8);
-      if (pastel) {
+      if (clay) {
         const cloth = k.cloths[Math.floor(hash(p.x, p.z) * k.cloths.length)];
         b.add(cloth, new THREE.CylinderGeometry(0.47, 0.53, 0.34, 20, 1, true), p.x, 0.6, p.z);
         b.cyl(cloth, p.x, 0.765, p.z, 0.47, 0.47, 0.02, 20);
@@ -236,10 +239,10 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
     case 'tableSide': {
       // Knocked over: the top stands on its edge as cover.
       b.add(k.wood, new THREE.CylinderGeometry(0.45, 0.45, 0.04, 20), p.x, 0.45, p.z, p.rot, Math.PI / 2);
-      b.add(pastel ? k.metal : neonMat(NEON.cyan), new THREE.TorusGeometry(0.45, 0.012, 4, 32), p.x, 0.45, p.z, p.rot);
+      b.add(clay ? k.metal : neonMat(NEON.cyan), new THREE.TorusGeometry(0.45, 0.012, 4, 32), p.x, 0.45, p.z, p.rot);
       const [bx, bz] = local(p.x, p.z, p.rot, 0, 0.4);
       b.add(k.metal, new THREE.CylinderGeometry(0.05, 0.08, 0.72, 8), bx, 0.08, bz, p.rot, Math.PI / 2);
-      if (pastel) {
+      if (clay) {
         // The tablecloth slid off onto the floor.
         const [cx, cz] = local(p.x, p.z, p.rot, 0.2, 0.55);
         b.add(k.cloths[0], new THREE.BoxGeometry(0.9, 0.02, 0.7), cx, 0.01, cz, p.rot + 0.3);
@@ -251,14 +254,15 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
     case 'chair': {
       // The sitter faces +z local (towards the table); the back is at -z.
       const at = (lx: number, lz: number) => local(p.x, p.z, p.rot, lx, lz);
-      const seat = pastel ? k.accent(hash(p.x, p.z) < 0.5 ? NEON.magenta : NEON.cyan) : k.cushion;
-      const frame = pastel ? k.wood : k.metal;
+      const seat = clay ? k.accent(hash(p.x, p.z) < 0.5 ? NEON.magenta : NEON.cyan) : k.cushion;
+      const frame = clay ? k.wood : k.metal;
       let [x, z] = at(0, 0);
+      b.shadow(x, z, 0.46, 0.46, 0.7);
       b.box(seat, x, 0.46, z, 0.42, 0.06, 0.42, p.rot);
       b.box(frame, x, 0.425, z, 0.44, 0.03, 0.44, p.rot);
       [x, z] = at(0, -0.2);
-      b.box(pastel ? k.wood : k.trim, x, 0.75, z, 0.42, 0.5, 0.04, p.rot);
-      b.box(pastel ? k.trim : neonMat(NEON.magenta), x, 1.01, z, 0.44, 0.03, 0.06, p.rot);
+      b.box(clay ? k.wood : k.trim, x, 0.75, z, 0.42, 0.5, 0.04, p.rot);
+      b.box(clay ? k.trim : neonMat(NEON.magenta), x, 1.01, z, 0.44, 0.03, 0.06, p.rot);
       for (const [lx, lz] of [
         [-0.18, -0.18],
         [0.18, -0.18],
@@ -272,7 +276,7 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
     }
     case 'booth': {
       const at = (lx: number, lz: number) => local(p.x, p.z, p.rot, lx, lz);
-      const leather = pastel ? k.accent(NEON.cyan) : k.cushion;
+      const leather = clay ? k.accent(NEON.cyan) : k.cushion;
       let [x, z] = at(0, 0.05);
       b.box(k.wood, x, 0.12, z, p.w, 0.24, 0.52, p.rot);
       b.box(leather, x, 0.32, z, p.w, 0.14, 0.55, p.rot);
@@ -285,7 +289,7 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
           b.box(k.trim, bx, y, bz, 0.03, 0.03, 0.02, p.rot);
         }
       }
-      b.box(pastel ? k.wood : neonMat(NEON.magenta), x, 1.21, z, p.w, 0.03, 0.16, p.rot);
+      b.box(clay ? k.wood : neonMat(NEON.magenta), x, 1.21, z, p.w, 0.03, 0.16, p.rot);
       const [hw, hd] = footprint(p.w, 0.66, p.rot);
       b.collide(p.x - hw, p.z - hd, p.x + hw, p.z + hd, 1.2);
       break;
@@ -293,9 +297,9 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
     case 'bar': {
       const len = p.x1 - p.x0;
       const cx = (p.x0 + p.x1) / 2;
-      b.box(pastel ? k.wood : k.trim, cx, 0.52, p.z, len, 1.04, 0.6);
-      b.box(pastel ? k.trim : k.metal, cx, 1.07, p.z, len + 0.1, 0.05, 0.72);
-      if (pastel) {
+      b.box(clay ? k.wood : k.trim, cx, 0.52, p.z, len, 1.04, 0.6);
+      b.box(clay ? k.trim : k.metal, cx, 1.07, p.z, len + 0.1, 0.05, 0.72);
+      if (clay) {
         b.add(k.metal, new THREE.CylinderGeometry(0.02, 0.02, len, 8), cx, 0.18, p.z + 0.4, 0, 0, Math.PI / 2); // foot rail
         for (let x = p.x0 + 0.5; x < p.x1; x += 1.0) b.box(k.accent(NEON.cyan), x, 0.55, p.z + 0.305, 0.8, 0.75, 0.015);
         b.box(k.metal, cx, 1.1, p.z + 0.36, len, 0.02, 0.02);
@@ -306,24 +310,24 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
       }
       // Back bar: mirror or glow panel, shelves, bottles.
       const sz = p.z - 1.55;
-      b.box(pastel ? k.wood : k.trim, cx, 1.6, sz - 0.12, len, 1.6, 0.06);
-      b.box(pastel ? phongMirror : neonMat(0x3a1a60), cx, 1.6, sz - 0.085, len - 0.2, 1.4, 0.01);
-      const bottleColors = pastel ? [0x8a6a2a, 0x5a7a4a, 0xd8e8e0, 0xa05a3a, 0x40604a] : [NEON.cyan, NEON.magenta, NEON.amber, NEON.green, NEON.violet];
+      b.box(clay ? k.wood : k.trim, cx, 1.6, sz - 0.12, len, 1.6, 0.06);
+      b.box(clay ? phongMirror : neonMat(0x3a1a60), cx, 1.6, sz - 0.085, len - 0.2, 1.4, 0.01);
+      const bottleColors = clay ? [CLAY.light, CLAY.mid, CLAY.dark, CLAY.base] : [NEON.cyan, NEON.magenta, NEON.amber, NEON.green, NEON.violet];
       for (const y of [1.0, 1.45, 1.9]) {
-        b.box(pastel ? k.wood : k.metal, cx, y, sz, len, 0.03, 0.26);
+        b.box(clay ? k.wood : k.metal, cx, y, sz, len, 0.03, 0.26);
         for (let x = p.x0 + 0.15; x < p.x1 - 0.1; x += 0.16 + hash(x, y) * 0.1) {
           const h = 0.18 + hash(y, x) * 0.14;
           const c = bottleColors[Math.floor(hash(x * 3, y) * bottleColors.length)];
-          b.cyl(pastel ? bottleMat(c) : neonMat(c), x, y + 0.015 + h / 2, sz, 0.03, 0.035, h, 6);
-          if (pastel) b.cyl(bottleMat(c), x, y + 0.015 + h + 0.04, sz, 0.01, 0.015, 0.08, 6);
+          b.cyl(clay ? bottleMat(c) : neonMat(c), x, y + 0.015 + h / 2, sz, 0.03, 0.035, h, 6);
+          if (clay) b.cyl(bottleMat(c), x, y + 0.015 + h + 0.04, sz, 0.01, 0.015, 0.08, 6);
         }
       }
       b.collide(p.x0, p.z - 0.3, p.x1, p.z + 0.3, 1.1);
       break;
     }
     case 'pillar': {
-      b.box(pastel ? k.wall : k.trim, p.x, p.h / 2, p.z, p.s, p.h, p.s);
-      if (pastel) {
+      b.box(clay ? k.wall : k.trim, p.x, p.h / 2, p.z, p.s, p.h, p.s);
+      if (clay) {
         b.box(k.accent(p.color), p.x, 0.55, p.z, p.s + 0.04, 1.1, p.s + 0.04);
         b.box(k.trim, p.x, 1.12, p.z, p.s + 0.08, 0.06, p.s + 0.08);
         b.box(k.wood, p.x, p.h - 0.15, p.z, p.s + 0.12, 0.2, p.s + 0.12);
@@ -364,14 +368,14 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
       break;
     }
     case 'sign': {
-      const hex = pastel ? '#d9b35a' : '#' + p.color.toString(16).padStart(6, '0');
-      const { tex, aspect } = signTexture(p.text, hex, pastel);
+      const hex = clay ? CLAY.ink : '#' + p.color.toString(16).padStart(6, '0');
+      const { tex, aspect } = signTexture(p.text, hex, clay);
       const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false });
       const m = new THREE.Mesh(new THREE.PlaneGeometry(p.h * aspect, p.h), mat);
       m.position.set(p.x, p.y, p.z);
       m.rotation.y = p.rot;
       m.renderOrder = 6;
-      if (pastel) {
+      if (clay) {
         // Painted signboard behind the gilded letters.
         const [bx, bz] = local(p.x, p.z, p.rot, 0, -0.03);
         b.box(signBoard, bx, p.y, bz, p.h * aspect * 0.9, p.h * 1.15, 0.04, p.rot);
@@ -388,30 +392,30 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
     }
     case 'lamp': {
       b.cyl(k.metal, p.x, (p.y + 3.3) / 2 + 0.1, p.z, 0.006, 0.006, 3.3 - p.y, 4);
-      const shade = pastel ? k.accent(p.color) : k.trim;
+      const shade = clay ? k.accent(p.color) : k.trim;
       b.add(shade, new THREE.CylinderGeometry(0.05, 0.22, 0.18, 12, 1, true), p.x, p.y, p.z);
-      b.cyl(pastel ? warmBulb : neonMat(p.color), p.x, p.y - 0.08, p.z, 0.16, 0.16, 0.01, 12);
-      const light = pastel ? 0xffd9a0 : p.color;
-      const pool = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), haloMat(light, pastel ? 0.22 : 0.35));
+      b.cyl(clay ? warmBulb : neonMat(p.color), p.x, p.y - 0.08, p.z, 0.16, 0.16, 0.01, 12);
+      const light = clay ? 0xffd9a0 : p.color;
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), haloMat(light, clay ? 0.12 : 0.35));
       pool.rotation.x = -Math.PI / 2;
-      pool.position.set(p.x, pastel ? 0.79 : 0.785, p.z);
+      pool.position.set(p.x, clay ? 0.79 : 0.785, p.z);
       pool.renderOrder = 4;
       b.object(pool);
-      const glow = halo(light, 0.6, 0.35, pastel ? 0.35 : 0.5);
+      const glow = halo(light, 0.6, 0.35, clay ? 0.35 : 0.5);
       glow.position.set(p.x, p.y - 0.12, p.z);
       b.object(glow);
       break;
     }
     case 'door': {
       const at = (lx: number) => local(p.x, p.z, p.rot, lx, 0);
-      const frame = pastel ? k.trim : neonMat(p.color);
+      const frame = clay ? k.trim : neonMat(p.color);
       for (const lx of [-0.8, 0.8]) {
         const [x, z] = at(lx);
-        b.box(frame, x, 1.15, z, pastel ? 0.12 : 0.05, 2.3, 0.3, p.rot);
+        b.box(frame, x, 1.15, z, clay ? 0.12 : 0.05, 2.3, 0.3, p.rot);
       }
       const [x, z] = at(0);
-      b.box(frame, x, 2.32, z, 1.72, pastel ? 0.14 : 0.05, 0.3, p.rot);
-      if (!pastel) {
+      b.box(frame, x, 2.32, z, 1.72, clay ? 0.14 : 0.05, 0.3, p.rot);
+      if (!clay) {
         const g = halo(p.color, 2.4, 3.0, 0.25);
         g.position.set(x, 1.2, z);
         g.rotation.y = p.rot;
@@ -442,12 +446,29 @@ export function buildProp(b: Builder, p: Prop, k: Kit): void {
   }
 }
 
-const phongMirror = new THREE.MeshPhongMaterial({ color: 0xd8dde0, shininess: 150, specular: 0xffffff });
-const signBoard = new THREE.MeshPhongMaterial({ color: 0x24493c, shininess: 30 });
+const phongMirror = new THREE.MeshPhongMaterial({ color: 0xf4f1ec, shininess: 60, specular: 0x999999 });
+const signBoard = new THREE.MeshLambertMaterial({ color: CLAY.mid });
 const warmBulb = new THREE.MeshBasicMaterial({ color: 0xfff0c8 });
+
+/** Vertical gradient, dark at the bottom: fake contact occlusion where walls meet the floor. */
+const aoStripMat = (() => {
+  const c = document.createElement('canvas');
+  c.width = 4;
+  c.height = 64;
+  const g = c.getContext('2d')!;
+  const grad = g.createLinearGradient(0, 64, 0, 0);
+  grad.addColorStop(0, CLAY.shadow.replace('ALPHA', '0.32'));
+  grad.addColorStop(0.35, CLAY.shadow.replace('ALPHA', '0.1'));
+  grad.addColorStop(1, CLAY.shadow.replace('ALPHA', '0'));
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 4, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+})();
 const bottleCache = new Map<number, THREE.Material>();
 function bottleMat(color: number): THREE.Material {
   let m = bottleCache.get(color);
-  if (!m) bottleCache.set(color, (m = new THREE.MeshPhongMaterial({ color, shininess: 120, specular: 0xffffff })));
+  if (!m) bottleCache.set(color, (m = new THREE.MeshLambertMaterial({ color })));
   return m;
 }

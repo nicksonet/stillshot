@@ -181,6 +181,17 @@ export class Weapon {
     }
   }
 
+  /** Reset flight and fire state when someone takes the gun in hand. */
+  prepareHeld(): void {
+    this.held = true;
+    this.thrown = false;
+    this.resting = false;
+    this.cooldown = 0;
+    this.realCooldown = 0;
+    this.mesh.position.set(0, 0, 0);
+    this.mesh.rotation.set(0, 0, 0);
+  }
+
   /** Consumes a round; returns false when empty. */
   fire(): boolean {
     if (this.ammo <= 0) return false;

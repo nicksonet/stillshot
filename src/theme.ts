@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 
-export type Style = 'neon' | 'pastel';
+export type Style = 'neon' | 'clay';
 
 export interface Theme {
-  /** neon: cyberpunk glow; pastel: soft, warm, period interior. */
+  /** neon: cyberpunk glow; clay: one warm off-white tone, shaped by light and baked shadow. */
   style: Style;
   background: number;
   fogNear: number;
@@ -30,35 +30,31 @@ export const NEON = {
   white: 0xe8f4ff,
 };
 
-/** Soft period palette for the restaurant (Guy Ritchie-style pastels). */
-export const PASTEL = {
-  cream: 0xf3e7d3,
-  mint: 0xa9d6c4,
-  sage: 0x8fb8a2,
-  pink: 0xf2b8c0,
-  salmon: 0xeb9f8c,
-  butter: 0xf5e2a0,
-  powder: 0xb5cfe6,
-  lavender: 0xcdbfe3,
-  wood: 0x6e4a36,
-  woodDark: 0x4a2f22,
-  brass: 0xc9a456,
-  linen: 0xfbf7ef,
+/** Monochrome "clay render" tones for the restaurant: only the people carry colour. */
+export const CLAY = {
+  wall: 0xf1ece5,
+  base: 0xebe5dc,
+  light: 0xf6f2ec,
+  mid: 0xdcd5cb,
+  dark: 0xcfc7bc,
+  floor: '#e3ddd4',
+  shadow: 'rgba(70, 58, 46, ALPHA)',
+  ink: '#6b6259',
 };
 
 export const THEMES: Record<string, Theme> = {
   restaurant: {
-    style: 'pastel',
-    background: 0xefe4d4,
-    fogNear: 14,
-    fogFar: 45,
-    hemiSky: 0xfff6ea,
-    hemiGround: 0xb8a590,
-    hemiIntensity: 1.9,
-    sunColor: 0xffe6c8,
-    sunIntensity: 1.3,
-    floorBase: '#efe6d6',
-    floorLine: '#9fc4b2',
+    style: 'clay',
+    background: 0xf3efe9,
+    fogNear: 12,
+    fogFar: 42,
+    hemiSky: 0xffffff,
+    hemiGround: 0xd9d1c6,
+    hemiIntensity: 2.1,
+    sunColor: 0xfff3e6,
+    sunIntensity: 1.25,
+    floorBase: CLAY.floor,
+    floorLine: CLAY.floor,
     floorGlow: '',
     skyline: false,
   },
@@ -187,28 +183,6 @@ export function floorTexture(t: Theme, repeat: number): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d')!;
-  if (t.style === 'pastel') {
-    // Checkerboard tiles with thin grout, like an old cafe floor.
-    for (let i = 0; i < 4; i++) {
-      g.fillStyle = (i + (i >> 1)) % 2 ? t.floorLine : t.floorBase;
-      g.fillRect((i % 2) * 128, (i >> 1) * 128, 128, 128);
-    }
-    g.strokeStyle = 'rgba(90,70,60,0.25)';
-    g.lineWidth = 2;
-    g.strokeRect(0, 0, 256, 256);
-    g.beginPath();
-    g.moveTo(128, 0);
-    g.lineTo(128, 256);
-    g.moveTo(0, 128);
-    g.lineTo(256, 128);
-    g.stroke();
-    const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(repeat / 2, repeat / 2);
-    tex.anisotropy = 4;
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-  }
   g.fillStyle = t.floorBase;
   g.fillRect(0, 0, 256, 256);
   // Glossy tile gradient.
