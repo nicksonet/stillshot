@@ -3,6 +3,11 @@
 let ctx: AudioContext | null = null;
 let noise: AudioBuffer | null = null;
 
+/** The shared context once audio has been unlocked by a user gesture, else null. */
+export function audioContext(): AudioContext | null {
+  return ctx;
+}
+
 export function initAudio(): void {
   if (!ctx) {
     ctx = new AudioContext();

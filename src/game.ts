@@ -3,6 +3,8 @@ import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { ambience, initAudio, sfx } from './audio';
 import { Bullets, type Bullet } from './bullets';
 import { Civilian } from './civilian';
+import { Debris } from './debris';
+import { Music } from './music';
 import { segmentSphere } from './collide';
 import { Enemy, type EnemyContext, type HitSphere } from './enemy';
 import { LEVELS, type EnemyKind, type LevelDef } from './levels';
@@ -72,6 +74,8 @@ export class Game {
   private world: World;
   private bullets: Bullets;
   private shards: Shards;
+  private debris: Debris;
+  private music = new Music();
   private panel: TextPanel;
   private time = new TimeController();
   private timer = new THREE.Timer();
@@ -84,6 +88,8 @@ export class Game {
   private enemies: Enemy[] = [];
   private civilians: Civilian[] = [];
   private vip: Civilian | null = null;
+  /** How many of the level's scripted intro spawns have been used. */
+  private introIndex = 0;
   private exits: THREE.Vector3[] = [];
   private freeGuns: Weapon[] = [];
   private queue: EnemyKind[] = [];
@@ -136,6 +142,7 @@ export class Game {
     this.world = new World(this.scene);
     this.bullets = new Bullets(this.scene);
     this.shards = new Shards(this.scene);
+    this.debris = new Debris(this.scene);
     this.panel = new TextPanel(this.scene);
 
     this.menuTarget = new THREE.Mesh(
@@ -310,7 +317,8 @@ export class Game {
     this.stateTimer = 0;
     this.time.reset();
     this.menuTarget.visible = false;
-    this.panel.show(`LEVEL ${i + 1} / ${LEVELS.length}`, LEVELS[i].name);
+    const { name, brief } = LEVELS[i];
+    this.panel.show(`LEVEL ${i + 1} / ${LEVELS.length}`, brief ? `${name} — ${brief}` : name);
     this.panelTimer = 2.5;
     ambience(LEVELS[i].theme === 'restaurant' ? 1 : 0.5);
   }
@@ -323,9 +331,11 @@ export class Game {
     for (const [x, z, rot, pose] of level.civilians) this.addCivilian(new Civilian(x, z, rot, pose));
     if (level.vip) {
       const [x, z, rot] = level.vip;
-      this.vip = new Civilian(x, z, rot, 'prone', true);
+      this.vip = new Civilian(x, z, rot, 'prone', 'vip');
       this.addCivilian(this.vip);
     }
+    for (const [x, z, rot] of level.guards ?? []) this.addCivilian(new Civilian(x, z, rot, 'kneel', 'guard'));
+    this.introIndex = 0;
     this.panicked = false;
     this.failReason = null;
     this.holdOpen = false;
@@ -364,6 +374,7 @@ export class Game {
     this.removeDesktopGun();
     this.bullets.clear();
     this.shards.clear();
+    this.debris.clear();
     this.queue = [];
     this.mouseHeld = false;
   }
@@ -453,6 +464,9 @@ export class Game {
       const gdt = realDt * this.time.scale;
 
       this.simulate(gdt, realDt);
+      // The groove follows time: it drags when you stand still.
+      const rate = this.state === 'playing' ? 0.25 + 0.75 * this.time.scale : this.state === 'failed' ? 0.2 : 0.85;
+      this.music.update(realDt, rate);
     } else {
       this.updateHead();
       this.menuTarget.rotation.y += realDt * 0.8;
@@ -823,7 +837,7 @@ export class Game {
 
     const ctx: EnemyContext = {
       playerHead: this.headPos,
-      vip: this.vip,
+      protectees: this.civilians.filter((c) => c.vip || c.guard),
       world: this.world,
       others: this.enemies,
       shoot: (from, dir, _w, shooter) => {
@@ -847,6 +861,7 @@ export class Game {
     this.bullets.sync();
     this.updateFreeGuns(gdt);
     this.shards.update(gdt);
+    this.debris.update(gdt);
 
     if (this.state === 'playing' && !this.holdOpen && this.queue.length === 0 && this.enemies.every((e) => !e.alive)) {
       this.state = 'cleared';
@@ -901,7 +916,11 @@ export class Game {
       return !this.enemies.some((e) => e.alive && Math.hypot(e.position.x - x, e.position.z - z) < 1);
     });
     if (!candidates.length) return null;
-    const [x, z] = candidates[Math.floor(Math.random() * candidates.length)];
+    // Scripted entrances first (e.g. through the kitchen), then random spawn points.
+    const intro = this.level.introSpawns?.[this.introIndex];
+    const scripted = intro && candidates.find(([x, z]) => x === intro[0] && z === intro[1]);
+    if (intro) this.introIndex++;
+    const [x, z] = scripted ?? candidates[Math.floor(Math.random() * candidates.length)];
     return this.addEnemy(kind, x, z);
   }
 
@@ -937,19 +956,20 @@ export class Game {
       const consider = (t: number, apply: () => void) => {
         if (t >= 0 && (!best || t < best.t)) best = { t, apply };
       };
-      const spheres = (ss: HitSphere[], apply: () => void) => {
-        for (const s of ss) consider(segmentSphere(b.prev, b.pos, s.c, s.r), apply);
+      // `at` is the centre of the sphere that was hit (head, chest or legs).
+      const spheres = (ss: HitSphere[], apply: (at: THREE.Vector3) => void) => {
+        for (const s of ss) consider(segmentSphere(b.prev, b.pos, s.c, s.r), () => apply(s.c));
       };
 
       consider(this.world.segmentHit(b.prev, b.pos), () => this.spark(b, 0x8a7ab0));
 
       for (const c of this.civilians) {
         if (!c.alive || c.gone || c === b.ignore) continue;
-        spheres(c.spheres, () => this.killCivilian(c, b.dir, b.owner === 'player'));
+        spheres(c.spheres, (at) => this.killCivilian(c, b.dir, b.owner === 'player', at));
       }
 
       if (b.owner === 'player') {
-        for (const e of this.enemies) if (e.alive && e.materialized) spheres(e.spheres, () => this.killEnemy(e, b.dir));
+        for (const e of this.enemies) if (e.alive && e.materialized) spheres(e.spheres, (at) => this.killEnemy(e, b.dir, at));
         if (this.state === 'menu' && this.menuTarget.visible)
           consider(segmentSphere(b.prev, b.pos, this.menuTarget.position, 0.25), () => this.hitMenuTarget(b.dir));
         for (const o of list) {
@@ -1031,31 +1051,33 @@ export class Game {
     }
   }
 
-  private killEnemy(e: Enemy, push: THREE.Vector3): void {
+  /** Shatter an enemy: his body breaks into its parts, the one that was hit flying hardest. */
+  private killEnemy(e: Enemy, push: THREE.Vector3, at?: THREE.Vector3): void {
     if (!e.alive) return;
     e.alive = false;
     this.kills++;
     this.freeHostage(e);
+    const hit = (at ?? e.spheres[1].c).clone();
     const impulse = push.clone().setY(0).normalize().multiplyScalar(3);
-    this.shards.burst(e.spheres[1].c, 32, SUIT_SHARDS, 2.5, 0.07, 0.3, impulse);
-    this.shards.burst(e.spheres[1].c, 10, RED, 2.5, 0.05, 0.15, impulse);
-    this.shards.burst(e.spheres[0].c, 10, SUIT_SHARDS, 2.5, 0.06, 0.12, impulse);
-    this.shards.burst(e.spheres[2].c, 16, SUIT_SHARDS, 1.5, 0.07, 0.3, impulse);
+    this.shards.burst(hit, 18, SUIT_SHARDS, 2.5, 0.05, 0.12, impulse);
+    this.shards.burst(hit, 8, RED, 2.5, 0.04, 0.1, impulse);
     const w = e.takeWeapon();
     if (w) this.release(w, new THREE.Vector3((Math.random() - 0.5) * 1.5, 2, (Math.random() - 0.5) * 1.5), false);
+    this.debris.explode(e.fig, impulse, hit);
     this.scene.remove(e.group);
     sfx.shatter();
     this.time.kick(0.2);
   }
 
-  private killCivilian(c: Civilian, push: THREE.Vector3, byPlayer: boolean): void {
+  private killCivilian(c: Civilian, push: THREE.Vector3, byPlayer: boolean, at?: THREE.Vector3): void {
     if (!c.alive) return;
     c.alive = false;
     const holder = this.enemies.find((e) => e.hostage === c);
     holder?.releaseHostage();
+    const hit = (at ?? c.spheres[1].c).clone();
     const impulse = push.clone().setY(0).normalize().multiplyScalar(2.5);
-    const color = c.vip ? VIP_SHARDS : CIV_SHARDS;
-    for (const s of c.spheres) this.shards.burst(s.c, 18, color, 2.2, 0.06, 0.25, impulse);
+    this.shards.burst(hit, 20, c.vip ? VIP_SHARDS : CIV_SHARDS, 2.2, 0.05, 0.12, impulse);
+    this.debris.explode(c.fig, impulse, hit);
     this.scene.remove(c.fig.root);
     sfx.glass();
     if (c.vip) this.fail('vip');
@@ -1113,7 +1135,7 @@ export class Game {
       return g.world.lineOfSight(g.headPos, p);
     };
     const aliveEnemies = () => g.enemies.filter((e) => e.alive);
-    const liveCivilians = () => g.civilians.filter((c) => c.alive && !c.gone && !c.vip);
+    const liveCivilians = () => g.civilians.filter((c) => c.alive && !c.gone && !c.vip && !c.guard);
     return {
       get state() {
         return g.state;
@@ -1157,6 +1179,8 @@ export class Game {
         })),
       civilians: () => liveCivilians().map((c) => ({ state: c.state, x: c.position.x, z: c.position.z })),
       vip: () => (g.vip ? { alive: g.vip.alive } : null),
+      guards: () => g.civilians.filter((c) => c.guard).map((c) => ({ alive: c.alive, state: c.state })),
+      debrisCount: () => g.debris.count,
       bulletCount: () => g.bullets.list.length,
       queued: () => g.queue.length,
       guns: () => ({

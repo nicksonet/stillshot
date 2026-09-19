@@ -14,6 +14,8 @@ type Api = {
   enemies(): { kind: string; x: number; z: number; ready: boolean; weapon: string | null; hostage: number; staggered: boolean }[];
   civilians(): { state: string; x: number; z: number }[];
   vip(): { alive: boolean } | null;
+  guards(): { alive: boolean; state: string }[];
+  debrisCount(): number;
   bulletCount(): number;
   queued(): number;
   guns(): { desktop: number | null; desktopKind: string | null; hands: { handedness: string; ammo: number | null }[]; free: number };
@@ -87,6 +89,8 @@ test('desktop: menu → restaurant → kill an enemy', async ({ page }) => {
   await page.waitForFunction(() => window.__game.state === 'playing' && window.__game.level === 0, null, { timeout: 15_000 });
   expect(await page.evaluate(() => window.__game.vip()?.alive)).toBe(true);
   expect(await page.evaluate(() => window.__game.civilians().length)).toBe(8);
+  // Two bodyguards kneel over the boss.
+  expect(await page.evaluate(() => window.__game.guards().map((g) => g.state))).toEqual(['kneel', 'kneel']);
 
   // Standing still, time is almost frozen.
   await page.waitForTimeout(500);
@@ -103,6 +107,8 @@ test('desktop: menu → restaurant → kill an enemy', async ({ page }) => {
   });
   await page.waitForFunction(() => window.__game.kills >= 1, null, { timeout: 5_000 });
   expect(await page.evaluate(() => window.__game.guns().desktop)).toBe(5);
+  // The body breaks into its parts (head, torso, upper and lower limbs).
+  expect(await page.evaluate(() => window.__game.debrisCount())).toBe(10);
   expect(await page.evaluate(() => window.__game.state)).toBe('playing');
 
   await page.screenshot({ path: 'test-results/desktop.png' });

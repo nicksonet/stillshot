@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { suitParts, type Civilian, type Palette, type SuitExtras } from './civilian';
+import { loft, suitParts, type Palette, type SuitExtras } from './body';
+import type { Civilian } from './civilian';
 import { Figure, G, HIP_Y, bakeFigure, type BakedFigure, type FigureParts } from './figure';
 import type { EnemyKind } from './levels';
 import { Weapon } from './weapons';
@@ -16,7 +17,8 @@ export interface HitSphere {
 
 export interface EnemyContext {
   playerHead: THREE.Vector3;
-  vip: Civilian | null;
+  /** People the player must protect (the boss and his bodyguards); enemies shoot at them too. */
+  protectees: Civilian[];
   world: World;
   others: Enemy[];
   shoot(from: THREE.Vector3, dir: THREE.Vector3, weapon: Weapon, shooter: Enemy): void;
@@ -25,8 +27,8 @@ export interface EnemyContext {
   coverScore(spot: THREE.Vector3): number;
 }
 
-const SUIT = 0x141417;
-const SUIT_DARK = 0x0b0b0d;
+const SUIT = 0x24252c;
+const SUIT_DARK = 0x18191e;
 const SHIRT = 0xf0efec;
 const TIE = 0xb3161b;
 const SKINS = [0xf0cfb4, 0xd9a582, 0xa06c4a, 0x6e4630];
@@ -49,23 +51,32 @@ function enemyParts(kind: EnemyKind, look: number): FigureParts {
   if (kind === 'gunner') {
     // Earpiece with a coiled wire into the collar.
     extras.torso = (add) => {
-      add(G.box(0.02, 0.03, 0.02), 0x0a0a0a, [-0.125, 0.78, 0.01]);
-      add(G.box(0.008, 0.14, 0.008), 0x2a2a2a, [-0.12, 0.66, -0.03], [0.2, 0, 0]);
+      add(G.box(0.018, 0.028, 0.02), 0x0a0a0a, [-0.1, 0.795, 0.0]);
+      add(G.box(0.006, 0.12, 0.006), 0x2a2a2a, [-0.085, 0.69, -0.03], [0.25, 0, 0.2]);
     };
   } else if (kind === 'rifleman') {
     // Long black overcoat with a turned-up collar.
     extras.torso = (add, both) => {
-      add(G.box(0.36, 0.5, 0.24), SUIT_DARK, [0, -0.18, 0]);
-      both(() => G.box(0.12, 0.12, 0.05), SUIT_DARK, [0.1, 0.62, 0.02], [0.2, 0, -0.35]);
-      add(G.box(0.3, 0.14, 0.05), SUIT_DARK, [0, 0.64, -0.1], [-0.2, 0, 0]);
-      for (const y of [0.1, 0.22, 0.34]) add(G.box(0.018, 0.018, 0.01), 0x2a2a2a, [0.07, y, 0.2]);
+      const coat = loft(
+        [
+          { y: 0.08, rx: 0.18, rz: 0.125 },
+          { y: -0.1, rx: 0.19, rz: 0.135, z: -0.005 },
+          { y: -0.3, rx: 0.205, rz: 0.15, z: -0.01 },
+          { y: -0.52, rx: 0.22, rz: 0.16, z: -0.015 },
+        ],
+        10,
+        (_y, a) => (Math.abs(a) < 0.08 ? 0x050506 : SUIT_DARK),
+        kind.length * 31,
+      );
+      add(coat, SUIT_DARK, [0, 0, 0]);
+      both(() => G.box(0.1, 0.13, 0.04), SUIT_DARK, [0.09, 0.63, 0.05], [0.25, 0, -0.35]);
+      add(G.box(0.26, 0.13, 0.04), SUIT_DARK, [0, 0.66, -0.085], [-0.2, 0, 0]);
     };
   } else if (kind === 'brawler') {
-    // Shaved head, open collar, heavier build, brass knuckles.
+    // Shaved head, open collar, brass knuckles.
     extras.bald = true;
     extras.noTie = true;
-    extras.torso = (_add, both) => both(() => G.box(0.16, 0.08, 0.22), SUIT, [0.26, 0.56, 0], [0, 0, -0.25]);
-    extras.hand = [{ geo: G.box(0.07, 0.025, 0.03), color: 0xc9a456, at: [0, -0.34, 0.035] }];
+    extras.hand = [{ geo: G.box(0.075, 0.022, 0.03), color: 0xc9a456, at: [0, -0.33, 0.022] }];
   } else {
     // Hostage-taker: a fedora.
     extras.torso = (add) => {
@@ -77,7 +88,8 @@ function enemyParts(kind: EnemyKind, look: number): FigureParts {
   return suitParts(palette, extras);
 }
 
-const solidMat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 50, specular: 0x505060, emissive: 0x0a0606 });
+// Satin black cloth: a strong specular makes the facets catch the light.
+const solidMat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, shininess: 70, specular: 0x8a8a9a, emissive: 0x060606 });
 const glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
 const bakedCache = new Map<string, BakedFigure>();
 
@@ -126,10 +138,15 @@ export class Enemy {
   private lean = 0.14;
   private leanSide = Math.random() < 0.5 ? -1 : 1;
   private sideT = 2;
+  private strafeT = 1.5 + Math.random() * 2;
+  private strafeLeft = 0;
+  private strafeSign = 1;
 
   constructor(kind: EnemyKind, x: number, z: number) {
     this.kind = kind;
     this.fig = new Figure(baked(kind, Math.floor(Math.random() * 4)), solidMat, glowMat);
+    // Raise first, then yaw: lets the stance twist the hips while the arm stays on target.
+    for (const a of this.fig.arms) a.upper.rotation.order = 'YXZ';
     this.cooldown = 1.2 + Math.random() * 1.5;
     this.preferred = kind === 'rifleman' ? 6 + Math.random() * 3 : 4 + Math.random() * 3;
     this.peekT = 1.5 + Math.random() * 1.5;
@@ -172,7 +189,10 @@ export class Enemy {
     if (!w) return null;
     this.weapon = null;
     this.burstLeft = 0;
-    this.fig.arms[0].upper.rotation.set(0, 0, 0);
+    // Drop the shooting stance.
+    for (const a of this.fig.arms) a.upper.rotation.set(0, 0, 0);
+    this.fig.hips.rotation.y = 0;
+    this.fig.head.rotation.y = 0;
     return w;
   }
 
@@ -280,10 +300,54 @@ export class Enemy {
     } else if (dist > this.preferred + 2) {
       moving = this.walkToward(ctx.playerHead, gdt, 1.3, ctx);
     } else {
+      moving = this.strafe(gdt, ctx);
       this.aimAndFire(gdt, ctx);
     }
     this.animateWalk(moving, gdt, 7);
-    if (!moving || this.aimT > 0) this.poseAim(ctx.playerHead, dist, gdt);
+    const aiming = !moving || this.aimT > 0;
+    this.stance(aiming, moving, gdt);
+    if (aiming) this.poseAim(ctx.playerHead, dist, gdt);
+  }
+
+  /** Every few seconds, side-step while keeping the gun on the player. */
+  private strafe(gdt: number, ctx: EnemyContext): boolean {
+    this.strafeT -= gdt;
+    if (this.strafeT <= 0 && this.strafeLeft <= 0) {
+      this.strafeLeft = 0.5 + Math.random() * 0.5;
+      this.strafeSign = Math.random() < 0.5 ? -1 : 1;
+      this.strafeT = 2.5 + Math.random() * 2;
+    }
+    if (this.strafeLeft <= 0) return false;
+    this.strafeLeft -= gdt;
+    const toP = _v.set(ctx.playerHead.x - this.position.x, 0, ctx.playerHead.z - this.position.z).normalize();
+    const step = 1.3 * gdt * this.strafeSign;
+    const moved = ctx.world.moveCircle(this.position, -toP.z * step, toP.x * step, ENEMY_RADIUS);
+    if (moved < Math.abs(step) * 0.3) this.strafeSign *= -1;
+    return moved > 0;
+  }
+
+  /**
+   * Shooting stance: body bladed to the target, gun arm straight out, knees bent.
+   * The hip twist is cancelled on the gun arm so it still points at the target.
+   */
+  private stance(on: boolean, moving: boolean, gdt: number): void {
+    const k = Math.min(1, gdt * 6);
+    const f = this.fig;
+    const lerp = (v: number, t: number) => v + (t - v) * k;
+    const twist = on ? -0.4 : 0;
+    f.hips.rotation.y = lerp(f.hips.rotation.y, twist);
+    f.arms[1].upper.rotation.y = lerp(f.arms[1].upper.rotation.y, -twist);
+    const support = on && this.weapon?.kind === 'smg';
+    f.arms[0].upper.rotation.y = lerp(f.arms[0].upper.rotation.y, support ? -twist + 0.55 : 0);
+    f.head.rotation.y = lerp(f.head.rotation.y, -twist * 0.8);
+    f.torso.rotation.x = lerp(f.torso.rotation.x, on ? 0.1 : 0);
+    if (moving) return;
+    const [front, back] = f.legs;
+    front.upper.rotation.x = lerp(front.upper.rotation.x, on ? -0.3 : 0);
+    front.lower.rotation.x = lerp(front.lower.rotation.x, on ? 0.45 : 0);
+    back.upper.rotation.x = lerp(back.upper.rotation.x, on ? 0.2 : 0);
+    back.lower.rotation.x = lerp(back.lower.rotation.x, on ? 0.35 : 0);
+    f.hips.position.y = lerp(f.hips.position.y, on ? HIP_Y - 0.05 : HIP_Y);
   }
 
   private pickSpot(ctx: EnemyContext): THREE.Vector3 | null {
@@ -309,8 +373,11 @@ export class Enemy {
   }
 
   private chooseTarget(ctx: EnemyContext, from: THREE.Vector3): THREE.Vector3 {
-    const vip = ctx.vip;
-    if (vip && vip.alive && Math.random() < 0.3 && ctx.world.lineOfSight(from, vip.spheres[1].c)) return _t.copy(vip.spheres[1].c);
+    const alive = ctx.protectees.filter((c) => c.alive);
+    if (alive.length && Math.random() < 0.35) {
+      const c = alive[Math.floor(Math.random() * alive.length)];
+      if (ctx.world.lineOfSight(from, c.spheres[1].c)) return _t.copy(c.spheres[1].c);
+    }
     _t.copy(ctx.playerHead);
     _t.y -= Math.random() * 0.4;
     return _t;

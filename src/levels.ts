@@ -32,6 +32,12 @@ export interface LevelDef {
   civilians: [number, number, number, CivState][];
   /** Feet position and heading of the boss lying on the floor. */
   vip?: [number, number, number];
+  /** The boss's bodyguards kneeling over him: position and heading. */
+  guards?: [number, number, number][];
+  /** Where the first enemies come in, in order (then random spawns). */
+  introSpawns?: [number, number][];
+  /** One-line objective shown under the level name. */
+  brief?: string;
   waves: EnemyKind[];
   maxAlive: number;
 }
@@ -137,6 +143,17 @@ function restaurant(): LevelDef {
     ],
     civilians: seated,
     vip: [0.9, 0.35, Math.PI / 2],
+    guards: [
+      [-0.15, -0.3, 0],
+      [1.35, 0.95, Math.atan2(-1.1, -0.6)],
+    ],
+    // They burst in through the kitchen first, then the street door.
+    introSpawns: [
+      [4.5, -7.2],
+      [4.5, -7.2],
+      [-7.2, -3.5],
+    ],
+    brief: 'Protect the boss',
     waves: [G, H, R, G, H, R, G, R],
     maxAlive: 4,
   };

@@ -24,12 +24,28 @@ test('screenshot tour', async ({ page }) => {
     g.startLevel(0);
     g.clearQueue();
     g.setTimeScale(0);
-    g.spawnEnemy('rifleman', 0.7, -1.9);
-    g.spawnEnemy('gunner', -0.8, -2.3);
+    g.spawnEnemy('rifleman', 0.6, -0.4);
+    g.spawnEnemy('gunner', -0.5, -0.6);
+    g.spawnEnemy('hostage', 0, 0);
+    g.spawnEnemy('brawler', 1.3, -1.3);
     g.aimAtEnemy(0, 1);
   });
-  await page.waitForTimeout(400);
+  // Wait for the level title to fade.
+  await page.waitForTimeout(2800);
   await page.screenshot({ path: 'test-results/shot-enemies.png' });
+  await page.evaluate(() => (window as any).__game.aimAtEnemy(3, 1));
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: 'test-results/shot-brawler.png' });
+  // Headshot the rifleman in slow motion: his body breaks apart.
+  await page.evaluate(() => {
+    const g = (window as any).__game;
+    g.aimAtEnemy(0, 0);
+    g.setTimeScale(0.35);
+    g.fire();
+  });
+  await page.waitForTimeout(900);
+  await page.evaluate(() => (window as any).__game.setTimeScale(0));
+  await page.screenshot({ path: 'test-results/shot-shatter.png' });
   await page.evaluate(() => (window as any).__game.aimAtVip());
   await page.waitForTimeout(200);
   await page.screenshot({ path: 'test-results/shot-vip.png' });

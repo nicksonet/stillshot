@@ -8,8 +8,11 @@ Every push to `main` is deployed there automatically (GitHub Actions → Pages).
 
 ## The game
 
-- **Level 1, The Restaurant:** a pastel, period dining room. Your boss has been knocked to the floor at your feet.
-  Gangsters in black suits come in from the kitchen, the street door and the back; some grab diners and hide behind them.
+- **Level 1, The Restaurant:** a pastel, period dining room. Your boss is on the floor at your feet, his two bodyguards
+  kneeling over him. Gangsters in black suits burst in through the kitchen, then the street door; some grab diners and hide behind them.
+- People are faceted, volumetric low-poly bodies; when shot they break into their parts (head, torso, limbs).
+- Enemies take a bladed shooting stance, side-step while aiming, and shoot at you, the boss and his guards.
+- A procedural lounge groove plays along and slows down with time.
 - You start with a **revolver**. Enemies carry pistols and **SMGs you can take off them**.
 - **Fail conditions:** you get hit, you hit a civilian ("CIVILIAN DOWN"), or the boss is shot ("THE BOSS IS DEAD").
 - Levels 2–5 are cyberpunk: Neon Alley, Rooftop, Data Center, Nightclub.

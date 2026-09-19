@@ -29,6 +29,8 @@ export function bake(pieces: Piece[]): THREE.BufferGeometry | null {
     _p.set(...p.at);
     _s.set(...(p.scale ?? [1, 1, 1]));
     g.applyMatrix4(_m.compose(_p, _q, _s));
+    // Pre-coloured geometry (lofted body parts) keeps its per-facet colours.
+    if (g.getAttribute('color')) return g;
     _c.set(p.color);
     const n = g.getAttribute('position').count;
     const colors = new Float32Array(n * 3);
@@ -57,27 +59,39 @@ export interface PartSet {
 
 export interface FigureParts {
   torso: PartSet;
+  /** Optional separate head (so it can fly off on its own). */
+  head?: PartSet;
   upperArm: PartSet;
   foreArm: PartSet;
   thigh: PartSet;
   shin: PartSet;
 }
 
+type Pair = [THREE.BufferGeometry | null, THREE.BufferGeometry | null];
+
 export interface BakedFigure {
-  torso: [THREE.BufferGeometry | null, THREE.BufferGeometry | null];
-  upperArm: [THREE.BufferGeometry | null, THREE.BufferGeometry | null];
-  foreArm: [THREE.BufferGeometry | null, THREE.BufferGeometry | null];
-  thigh: [THREE.BufferGeometry | null, THREE.BufferGeometry | null];
-  shin: [THREE.BufferGeometry | null, THREE.BufferGeometry | null];
+  torso: Pair;
+  head: Pair;
+  upperArm: Pair;
+  foreArm: Pair;
+  thigh: Pair;
+  shin: Pair;
 }
 
 export function bakeFigure(parts: FigureParts): BakedFigure {
-  const b = (s: PartSet): [THREE.BufferGeometry | null, THREE.BufferGeometry | null] => [bake(s.solid), bake(s.glow ?? [])];
-  return { torso: b(parts.torso), upperArm: b(parts.upperArm), foreArm: b(parts.foreArm), thigh: b(parts.thigh), shin: b(parts.shin) };
+  const b = (s?: PartSet): Pair => (s ? [bake(s.solid), bake(s.glow ?? [])] : [null, null]);
+  return {
+    torso: b(parts.torso),
+    head: b(parts.head),
+    upperArm: b(parts.upperArm),
+    foreArm: b(parts.foreArm),
+    thigh: b(parts.thigh),
+    shin: b(parts.shin),
+  };
 }
 
 export const HIP_Y = 0.92;
-export const SHOULDER = new THREE.Vector3(0.3, 0.6, 0);
+export const SHOULDER = new THREE.Vector3(0.27, 0.58, 0);
 export const ELBOW_Y = -0.3;
 export const HIP_X = 0.1;
 export const KNEE_Y = -0.42;
@@ -96,6 +110,7 @@ export class Figure {
   readonly root = new THREE.Group();
   readonly hips = new THREE.Group();
   readonly torso = new THREE.Group();
+  readonly head = new THREE.Group();
   readonly arms: [Limb, Limb];
   readonly legs: [Limb, Limb];
   readonly headMark = new THREE.Object3D();
@@ -103,14 +118,16 @@ export class Figure {
   readonly pelvisMark = new THREE.Object3D();
 
   constructor(baked: BakedFigure, solid: THREE.Material, glow: THREE.Material) {
-    const mesh = (pair: [THREE.BufferGeometry | null, THREE.BufferGeometry | null], parent: THREE.Object3D) => {
+    const mesh = (pair: Pair, parent: THREE.Object3D) => {
       if (pair[0]) parent.add(new THREE.Mesh(pair[0], solid));
       if (pair[1]) parent.add(new THREE.Mesh(pair[1], glow));
     };
     this.hips.position.y = HIP_Y;
     this.root.add(this.hips);
     this.hips.add(this.torso);
+    this.torso.add(this.head);
     mesh(baked.torso, this.torso);
+    mesh(baked.head, this.head);
 
     const limb = (side: number, arm: boolean): Limb => {
       const upper = new THREE.Group();
@@ -170,5 +187,18 @@ export class Figure {
       l.upper.rotation.x *= k;
       l.lower.rotation.x *= k;
     }
+  }
+
+  /**
+   * Break the body into its rigid parts (head, torso, upper and lower limbs), moved
+   * into `scene` with their current world transforms. The figure is empty afterwards.
+   */
+  breakApart(scene: THREE.Object3D): THREE.Group[] {
+    this.root.updateMatrixWorld(true);
+    const parts: THREE.Group[] = [];
+    for (const l of [...this.arms, ...this.legs]) parts.push(l.lower, l.upper);
+    parts.push(this.head, this.torso);
+    for (const p of parts) scene.attach(p);
+    return parts;
   }
 }
