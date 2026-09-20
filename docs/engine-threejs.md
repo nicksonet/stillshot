@@ -67,10 +67,10 @@ never plant a foot (`clipSpeeds()` shows the foot-speed spread — a real step c
 
 ## The walk is built, not played
 
-The Tripo clips are not usable as locomotion: the planted foot never stops ( shows p10 far
-from zero), the arms hang still, and the body neither dips nor turns.  replaces them
+The Tripo clips are not usable as locomotion: the planted foot never stops (`clipSpeeds()` shows p10 far
+from zero), the arms hang still, and the body neither dips nor turns. `Person.stepCycle()` replaces them
 while anyone is moving: step length and cadence follow the travel speed (capped by leg length, or the foot
 cannot reach), each foot is set down and left in world space for its stance, the swing arcs it to the next
 footfall, arms swing against the legs, pelvis and shoulders counter-rotate, the body dips twice a cycle and
-leans into a run. Idle and hurt still come from the clips.  switches each piece off for
-before-and-after captures, and  shows the clips on their own.
+leans into a run. Idle and hurt still come from the clips. `motionFixes` switches each piece off for
+before-and-after captures, and `viewer.html?drive=gangster&speed=1.4&motion=walk&raw=1` shows the clips alone.
