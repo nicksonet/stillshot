@@ -16,9 +16,10 @@ Every push to `main` is deployed there automatically (GitHub Actions → Pages).
 - People are generated with Tripo3D (image → 3D → auto-rig → preset clips): gangsters, diners, the boss and his guards.
   `person.ts` finds each skeleton by shape, plays clips in game time and bends bones for sitting, cowering, kneeling,
   hands up, lying down and aiming; a shot body is baked in its pose and breaks into head, torso and limbs.
-- Movement is corrected as it plays: the step cycle is retimed to the speed the body travels (and walk swaps
-  for run), the legs turn towards where it is going while the torso twists back to its target, and the standing
-  foot is pinned to the floor with two-bone IK. `npm run motion` measures what sliding is left.
+- Walking and running are built in code, not played back: the generated clips slide and never swing the arms,
+  so `person.ts` takes the step length and cadence from the speed the body travels, sets each foot down on the
+  floor and leaves it there, swings the arms against the legs, turns the pelvis and shoulders, and leans into a
+  run. The legs point where the body is going while the torso stays on its target. `npm run motion` measures it.
 - Enemies: gunner, rifleman (SMG bursts), brawler, hostage-taker; bladed shooting stance, side-steps, cover behind civilians,
   and they target you, the boss and his guards.
 - Weapons: revolver (start), pistol, SMG; disarm, throw, punch, block bullets with your gun, shoot bullets out of the air.

@@ -28,7 +28,7 @@ const SCENARIOS = [
   {
     name: 'bench-walk-before',
     note: 'locomotion bench with the motion fixes off: the old look',
-    bench: 'drive=gangster&speed=1.4&motion=walk&raw=1',
+    bench: 'drive=gangster&speed=1.4&motion=walk&raw=1&dist=2.6',
   },
   {
     name: 'bench-run-before',
@@ -38,7 +38,7 @@ const SCENARIOS = [
   {
     name: 'bench-walk',
     note: 'locomotion bench: walking at 1.4 m/s, side view',
-    bench: 'drive=gangster&speed=1.4&motion=walk',
+    bench: 'drive=gangster&speed=1.4&motion=walk&dist=2.6',
   },
   {
     name: 'bench-run',

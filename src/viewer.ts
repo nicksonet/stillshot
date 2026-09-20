@@ -103,8 +103,11 @@ async function drive(names: PersonModel[]) {
   const speed = Number(params.get('speed') ?? 1.4);
   const drift = Number(params.get('drift') ?? 0);
   const motion = (params.get('motion') ?? 'walk') as Motion;
+  const dist = Number(params.get('dist') ?? 4.6);
   // ?raw=1 turns the motion fixes off, for before-and-after captures.
-  if (params.get('raw')) motionFixes.stride = motionFixes.plant = motionFixes.turn = false;
+  if (params.get('raw')) motionFixes.stride = motionFixes.plant = motionFixes.turn = motionFixes.gait = false;
+  // ?gait=0 falls back to the generated clips with the stride and foot fixes on top.
+  if (params.get('gait') === '0') motionFixes.gait = false;
   const people = names.map((n, i) => {
     const p = new Person(n);
     p.root.position.set((i - (names.length - 1) / 2) * spacing, 0, 0);
@@ -128,7 +131,7 @@ async function drive(names: PersonModel[]) {
     }
     // The camera rides along beside them.
     const mid = people.reduce((s, p) => s + p.root.position.z, 0) / people.length;
-    camera.position.set(4.6, 1.15, mid + 0.5);
+    camera.position.set(dist, 1.05, mid + 0.35);
     camera.lookAt(0, 0.95, mid);
   });
   const viewer = {

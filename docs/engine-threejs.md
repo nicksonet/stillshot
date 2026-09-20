@@ -64,3 +64,13 @@ numbers), `motion/<scene>.mp4` and `motion/report.json`:
 Traps this caught: enemies face the player while walking sideways or backwards, so a forward walk clip
 turned into a moonwalk; clips played at their own tempo regardless of speed; and the generated clips
 never plant a foot (`clipSpeeds()` shows the foot-speed spread — a real step cycle has p10 near zero).
+
+## The walk is built, not played
+
+The Tripo clips are not usable as locomotion: the planted foot never stops ( shows p10 far
+from zero), the arms hang still, and the body neither dips nor turns.  replaces them
+while anyone is moving: step length and cadence follow the travel speed (capped by leg length, or the foot
+cannot reach), each foot is set down and left in world space for its stance, the swing arcs it to the next
+footfall, arms swing against the legs, pelvis and shoulders counter-rotate, the body dips twice a cycle and
+leans into a run. Idle and hurt still come from the clips.  switches each piece off for
+before-and-after captures, and  shows the clips on their own.

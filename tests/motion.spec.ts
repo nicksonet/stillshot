@@ -13,7 +13,7 @@ declare global {
   }
 }
 
-/** Walk or run a model across the locomotion bench and report how much the standing foot slid. */
+/** Walk or run a model across the locomotion bench and report the stepping and the sliding. */
 async function bench(page: import('@playwright/test').Page, query: string) {
   await page.goto(`/viewer.html?${query}`);
   await page.waitForFunction(() => window.__viewer?.ready, null, { timeout: 60000 });
@@ -34,26 +34,32 @@ async function bench(page: import('@playwright/test').Page, query: string) {
   });
 }
 
-// The generated clips drift badly on their own; Person retimes the stride and pins the standing
-// foot. Without that the foot slides at roughly the speed the body travels.
-test('the standing foot stays put while walking and running', async ({ page }) => {
+// The walk is built from the speed, not played back: whoever is moving takes real steps and the
+// foot they stand on stays where it landed. The generated clips slide instead (`raw=1`).
+test('walking and running take steps without sliding', async ({ page }) => {
   const walk = await bench(page, 'drive=gangster&speed=1.4&motion=walk');
-  expect(walk.clip).toBe('walk');
   expect(walk.steps).toBeGreaterThan(2);
-  expect(walk.slip).toBeLessThan(1.1);
+  expect(walk.slip).toBeLessThan(0.6);
 
-  const run = await bench(page, 'drive=diner-man&speed=2.4&motion=run');
-  expect(run.steps).toBeGreaterThan(2);
-  expect(run.slip).toBeLessThan(1.4);
+  const run = await bench(page, 'drive=diner-man&speed=2.6&motion=run');
+  expect(run.steps).toBeGreaterThan(3);
+  expect(run.slip).toBeLessThan(0.6);
 
   const raw = await bench(page, 'drive=gangster&speed=1.4&motion=walk&raw=1');
-  expect(raw.slip).toBeGreaterThan(walk.slip);
+  expect(raw.slip).toBeGreaterThan(walk.slip * 2);
 });
 
-// Slow walkers must not run and sprinters must not stroll: the clip follows the travel speed.
-test('the step cycle follows the speed the body travels', async ({ page }) => {
-  const amble = await bench(page, 'drive=diner-man&speed=0.8&motion=run');
+// Faster feet: a walk at speed takes more steps in the same time than a stroll.
+test('the step cycle keeps up with the speed', async ({ page }) => {
+  const stroll = await bench(page, 'drive=diner-man&speed=0.9&motion=walk');
+  const hurry = await bench(page, 'drive=diner-man&speed=2.8&motion=run');
+  expect(hurry.steps).toBeGreaterThan(stroll.steps);
+});
+
+// With the built walk switched off, the clips are at least picked by speed (walk under, run over).
+test('the clip fallback picks walk or run by speed', async ({ page }) => {
+  const amble = await bench(page, 'drive=diner-man&speed=0.8&motion=run&gait=0');
   expect(amble.clip).toBe('walk');
-  const dash = await bench(page, 'drive=diner-man&speed=3.2&motion=walk');
+  const dash = await bench(page, 'drive=diner-man&speed=3.2&motion=walk&gait=0');
   expect(dash.clip).toBe('run');
 });
