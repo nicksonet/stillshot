@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "playwright test",
     "proof": "node tools/proof.mjs",
-    "assets": "node tools/asset-gen.mjs"
+    "assets": "node tools/asset-gen.mjs",
+    "motion": "node tools/motion.mjs"
   },
   "dependencies": {
     "three": "^0.186.0"

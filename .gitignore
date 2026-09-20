@@ -9,3 +9,4 @@ proof/
 .env
 .env.*
 shots/
+motion/

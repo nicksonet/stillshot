@@ -99,6 +99,31 @@ export function stretchedTriangles(mesh: THREE.SkinnedMesh, min: number): number
 }
 
 const cleaned = new WeakSet<THREE.BufferGeometry>();
+const LOCOMOTION = new Set<Motion>(['walk', 'run']);
+/** How far a step cycle may be stretched before the other locomotion clip is used instead. */
+const MIN_RATE = 0.7;
+const MAX_RATE = 1.45;
+/** Measured once per model and clip: the speed that stride carries a body at, in m/s. */
+const clipSpeeds = new Map<string, number>();
+/** How far a planted foot may travel from where it landed before the next step starts (metres). */
+const STEP_REACH = 0.5;
+/** How strongly the standing foot is pinned: 1 nails it down, 0 leaves the clip alone. */
+const PLANT_STRENGTH = 0.9;
+/** How much lower the other foot must be before the weight counts as transferred (metres). */
+const STANCE_MARGIN = 0.03;
+/** Foot-speed spread of each measured clip, to tell a real step cycle from marching on the spot. */
+const clipTrace = new Map<string, { p10: number; p50: number; p90: number }>();
+
+/**
+ * Motion fixes, switchable so a capture can show the difference: stride keeps the step cycle in
+ * time with the travel speed, plant pins the standing foot, turn points the legs where the body goes.
+ */
+export const motionFixes = { stride: true, plant: true, turn: true };
+
+/** Stride speeds measured for the loaded models (debug and motion review). */
+export function personClipSpeeds(): Record<string, unknown> {
+  return Object.fromEntries([...clipSpeeds].map(([k, v]) => [k, { speed: +v.toFixed(2), ...clipTrace.get(k) }]));
+}
 
 /**
  * A rigged person: plays the generated clips (in game time) and bends bones towards
@@ -120,7 +145,25 @@ export class Person {
   private mixer: THREE.AnimationMixer;
   private actions = new Map<string, THREE.AnimationAction>();
   private current: THREE.AnimationAction | null = null;
-  private motion: Motion = 'none';
+  /** Clip now playing, measured ground speed (m/s) and travel-versus-facing angle: motion telemetry. */
+  motion: Motion = 'none';
+  groundSpeed = 0;
+  driftAngle = 0;
+  /** How fast the planted foot slides over the floor (m/s): 0 means the stride matches the speed. */
+  footSlip = 0;
+  private lastFoot = new THREE.Vector3();
+  /** Steps taken: a step is a foot landing, so this counts the step cycle. */
+  steps = 0;
+  /** How far the foot ended up from where the pin wanted it (metres): the IK residual. */
+  ikError = 0;
+  /** Which foot is standing, where it landed, and how far the pin has faded in. */
+  private stance = -1;
+  private planted: THREE.Vector3 | null = null;
+  private plantBlend = 0;
+  private prev = new THREE.Vector3(NaN, 0, 0);
+  /** What the caller asked for, and the smoothed turn of the legs towards the travel direction. */
+  private requested: Motion = 'none';
+  turn = 0;
   private hips: THREE.Bone;
   private spine: THREE.Bone;
   private chest: THREE.Bone;
@@ -132,7 +175,7 @@ export class Person {
   /** Bind-pose rotations, restored every frame when no clip drives the bones. */
   private rest: [THREE.Bone, THREE.Quaternion][] = [];
 
-  constructor(name: PersonModel) {
+  constructor(private name: PersonModel) {
     const gltf = cache.get(name);
     if (!gltf) throw new Error(`model ${name} not loaded`);
     this.model = SkeletonUtils.clone(gltf.scene);
@@ -200,6 +243,7 @@ export class Person {
     this.legL = legs.left;
     this.model.traverse((o) => isBone(o) && this.rest.push([o, o.quaternion.clone()]));
     this.dropSlivers();
+    this.measureClipSpeeds();
     this.play('idle');
   }
 
@@ -240,7 +284,18 @@ export class Person {
     geo.setIndex(kept);
   }
 
+  /**
+   * Ask for a motion. Walking and running are the same request as far as the caller is concerned:
+   * which of the two clips runs, and how fast, is decided from the speed the body actually travels.
+   */
   play(m: Motion, fade = 0.2): void {
+    this.requested = m;
+    if (m === this.motion) return;
+    if (LOCOMOTION.has(m) && LOCOMOTION.has(this.motion)) return;
+    this.switchTo(m, fade);
+  }
+
+  private switchTo(m: Motion, fade = 0.2): void {
     if (m === this.motion) return;
     this.motion = m;
     const next = m === 'none' ? null : (this.actions.get(m) ?? this.actions.get('idle') ?? null);
@@ -256,18 +311,181 @@ export class Person {
   }
 
   /** Advance the clip (game time) and apply the pose on top. */
+  /** Track how fast and in which direction the body is actually travelling over the floor. */
+  private measure(dt: number): void {
+    const p = this.root.position;
+    if (dt > 1e-5 && !Number.isNaN(this.prev.x)) {
+      const dx = p.x - this.prev.x;
+      const dz = p.z - this.prev.z;
+      const d = Math.hypot(dx, dz);
+      this.groundSpeed = d / dt;
+      if (d > 1e-4) {
+        const a = Math.atan2(dx, dz) - this.root.rotation.y;
+        this.driftAngle = Math.atan2(Math.sin(a), Math.cos(a));
+      }
+    }
+    this.prev.set(p.x, p.y, p.z);
+  }
+
+  /** The lower foot should stand still on the floor; whatever it does instead is slip. */
+  /**
+   * Keep the standing foot on the spot. The generated clips let both feet drift, which reads as
+   * skating, so the lower foot is pinned where it landed and the leg is bent to reach that point;
+   * once the step carries it too far, the foot re-plants and the next step begins.
+   */
+  private plantFeet(dt: number): void {
+    const legs = [this.legR, this.legL];
+    const ankles = legs.map((l) => l.c.getWorldPosition(new THREE.Vector3()));
+    // The standing foot only changes when the other one is clearly lower, or it chatters between the two.
+    const lower = ankles[0].y <= ankles[1].y ? 0 : 1;
+    const stance = this.stance < 0 || ankles[lower].y < ankles[1 - lower].y - STANCE_MARGIN ? lower : this.stance;
+    const foot = ankles[stance];
+    // A new step: the other foot took the weight, or this one has carried it as far as it goes.
+    const stepped = stance !== this.stance || !this.planted || Math.hypot(foot.x - this.planted.x, foot.z - this.planted.z) > STEP_REACH;
+    if (!stepped && motionFixes.plant) {
+      this.plantBlend = Math.min(1, this.plantBlend + dt * 20);
+      // A vector of its own: point() below reuses the shared temporaries.
+      const target = new THREE.Vector3(this.planted!.x, foot.y, this.planted!.z).lerp(foot, 1 - this.plantBlend * PLANT_STRENGTH);
+      this.reach(legs[stance], target);
+      this.ikError = legs[stance].c.getWorldPosition(_p1).distanceTo(target);
+    }
+    // Sliding is measured on the foot that is standing, over frames where it stays the standing one.
+    legs[stance].c.getWorldPosition(_p1);
+    this.footSlip = stepped || dt <= 1e-5 ? 0 : Math.hypot(_p1.x - this.lastFoot.x, _p1.z - this.lastFoot.z) / dt;
+    this.lastFoot.copy(_p1);
+    if (stepped) {
+      this.stance = stance;
+      this.planted = foot.clone();
+      this.plantBlend = 0;
+      this.steps++;
+    }
+  }
+
+  /** Two-bone IK: bend hip and knee so the ankle lands on `target`, keeping the knee's current side. */
+  private reach(leg: Chain, goal: THREE.Vector3): void {
+    const target = goal.clone();
+    const hip = leg.a.getWorldPosition(new THREE.Vector3());
+    const knee = leg.b.getWorldPosition(new THREE.Vector3());
+    const ankle = leg.c.getWorldPosition(new THREE.Vector3());
+    const upper = hip.distanceTo(knee);
+    const lower = knee.distanceTo(ankle);
+    const to = target.clone().sub(hip);
+    const dist = Math.min(to.length(), upper + lower - 1e-3);
+    if (dist < 1e-3 || upper < 1e-3 || lower < 1e-3) return;
+    const dir = to.normalize();
+    // Keep bending the knee the way the clip already bends it.
+    const side = knee.clone().sub(hip);
+    side.addScaledVector(dir, -side.dot(dir));
+    if (side.lengthSq() < 1e-6) return;
+    side.normalize();
+    const cos = THREE.MathUtils.clamp((upper * upper + dist * dist - lower * lower) / (2 * upper * dist), -1, 1);
+    const angle = Math.acos(cos);
+    const kneeDir = dir.clone().multiplyScalar(Math.cos(angle)).addScaledVector(side, Math.sin(angle));
+    const newKnee = hip.clone().addScaledVector(kneeDir, upper);
+    this.point(leg.a, leg.b, kneeDir);
+    this.point(leg.b, leg.c, target.clone().sub(newKnee).normalize());
+  }
+
+  /**
+   * Learn how fast each step cycle carries a body: with the root standing still, the planted foot
+   * runs backwards at exactly the speed the stride is meant for. Measured once per model and clip.
+   */
+  private measureClipSpeeds(): void {
+    this.mixer.timeScale = 1;
+    for (const m of LOCOMOTION) {
+      const key = `${this.name}:${m}`;
+      if (clipSpeeds.has(key) || !this.actions.has(m)) continue;
+      this.switchTo(m, 0);
+      const step = 1 / 60;
+      const was = [new THREE.Vector3(), new THREE.Vector3()];
+      const samples: number[] = [];
+      for (let i = 0; i < 90; i++) {
+        this.mixer.update(step);
+        this.root.updateMatrixWorld(true);
+        let lowest = Infinity;
+        let planted = 0;
+        for (const [k, ankle] of [this.legR.c, this.legL.c].entries()) {
+          ankle.getWorldPosition(_p1);
+          if (i > 0 && _p1.y < lowest) {
+            lowest = _p1.y;
+            planted = Math.hypot(_p1.x - was[k].x, _p1.z - was[k].z) / step;
+          }
+          was[k].copy(_p1);
+        }
+        if (i > 2) samples.push(planted);
+      }
+      samples.sort((a, b) => a - b);
+      const at = (q: number) => samples[Math.floor((samples.length - 1) * q)];
+      // A real step cycle has the planted foot near a standstill: p10 close to 0, p50 the travel speed.
+      clipTrace.set(key, { p10: +at(0.1).toFixed(2), p50: +at(0.5).toFixed(2), p90: +at(0.9).toFixed(2) });
+      clipSpeeds.set(key, Math.max(0.3, at(0.5)));
+    }
+    this.mixer.stopAllAction();
+    this.current = null;
+    this.motion = 'none';
+    this.resetBones();
+  }
+
   private resetBones(): void {
     for (const [b, q] of this.rest) b.quaternion.copy(q);
   }
 
   update(dt: number, speed = 1): void {
-    this.mixer.timeScale = speed;
+    this.measure(dt);
+    this.mixer.timeScale = speed * this.strideRate();
     if (this.actions.size) this.mixer.update(dt);
     else this.resetBones();
+    // Walking sideways or backwards: turn the legs along the travel, twist the torso back to the facing.
+    const turn = this.travelTurn(dt);
+    this.model.rotation.y = -Math.PI / 2 + turn;
     this.model.position.set(this.lean, -this.crouch, 0);
     this.root.updateMatrixWorld(true);
+    if (turn) this.twist(this.spine, -turn * 0.7);
     this.applyPose();
     if (this.aimAt) this.applyAim(this.aimAt);
+    if (this.pose === 'stand') this.plantFeet(dt);
+  }
+
+  /**
+   * Play the step cycle at the speed the body is actually travelling, so the planted foot stays
+   * put instead of sliding, and swap walk for run when the clip would have to stretch too far.
+   */
+  private strideRate(): number {
+    if (!motionFixes.stride) return 1;
+    if (!LOCOMOTION.has(this.motion) || !LOCOMOTION.has(this.requested)) return 1;
+    const other: Motion = this.motion === 'walk' ? 'run' : 'walk';
+    const rate = this.groundSpeed / this.clipSpeed(this.motion);
+    if (rate < MIN_RATE || rate > MAX_RATE) {
+      const altRate = this.groundSpeed / this.clipSpeed(other);
+      if (this.actions.has(other) && altRate >= MIN_RATE && altRate <= MAX_RATE) {
+        this.switchTo(other, 0.12);
+        return altRate;
+      }
+    }
+    return THREE.MathUtils.clamp(rate, MIN_RATE, MAX_RATE);
+  }
+
+  private clipSpeed(m: string): number {
+    return clipSpeeds.get(`${this.name}:${m}`) ?? 1.4;
+  }
+
+  /** Smoothed angle between where the body travels and where it faces (0 while standing still). */
+  private travelTurn(dt: number): number {
+    if (!motionFixes.turn) return 0;
+    const want = this.groundSpeed > 0.25 ? this.driftAngle : 0;
+    let d = want - this.turn;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    this.turn += d * Math.min(1, dt * 8);
+    return Math.abs(this.turn) < 0.02 ? 0 : this.turn;
+  }
+
+  /** Rotate a bone (and everything above it) around the world up axis. */
+  private twist(bone: THREE.Bone, angle: number): void {
+    _q.setFromAxisAngle(UP, angle);
+    bone.getWorldQuaternion(_qw).premultiply(_q);
+    (bone.parent as THREE.Object3D).getWorldQuaternion(_qp).invert();
+    bone.quaternion.copy(_qp.multiply(_qw));
+    bone.updateMatrixWorld(true);
   }
 
   /** Direction given in the character's own frame (+Z forward, +Y up) → world. */

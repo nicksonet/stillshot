@@ -16,6 +16,9 @@ Every push to `main` is deployed there automatically (GitHub Actions → Pages).
 - People are generated with Tripo3D (image → 3D → auto-rig → preset clips): gangsters, diners, the boss and his guards.
   `person.ts` finds each skeleton by shape, plays clips in game time and bends bones for sitting, cowering, kneeling,
   hands up, lying down and aiming; a shot body is baked in its pose and breaks into head, torso and limbs.
+- Movement is corrected as it plays: the step cycle is retimed to the speed the body travels (and walk swaps
+  for run), the legs turn towards where it is going while the torso twists back to its target, and the standing
+  foot is pinned to the floor with two-bone IK. `npm run motion` measures what sliding is left.
 - Enemies: gunner, rifleman (SMG bursts), brawler, hostage-taker; bladed shooting stance, side-steps, cover behind civilians,
   and they target you, the boss and his guards.
 - Weapons: revolver (start), pistol, SMG; disarm, throw, punch, block bullets with your gun, shoot bullets out of the air.
@@ -70,6 +73,7 @@ npm run dev        # HTTPS on :5173 (WebXR needs HTTPS); on the Quest open https
 npm run typecheck
 npm test           # Playwright: gameplay, disarm, civilians, boss, hostages, draw calls, emulated Quest 3
 npm run proof      # bot plays on the real GPU; review proof/sheet.png, proof/proof.mp4, proof/report.json
+npm run motion     # frame-by-frame animation review into motion/ (contact sheets, video, slip numbers)
 ```
 
 - `SHOTS=1 npx playwright test tests/screens.spec.ts` — screenshot tour into `test-results/`
@@ -86,7 +90,7 @@ npm run proof      # bot plays on the real GPU; review proof/sheet.png, proof/pr
 | `spawner.ts` | waves, scripted entrances, hostage-takers |
 | `debug.ts` | `window.__game` for tests, the proof bot and the console |
 | `time.ts` | time scale driven by head and hand motion |
-| `person.ts` | generated people: skeleton found by shape, clips in game time, poses, aiming, break-apart |
+| `person.ts` | generated people: skeleton by shape, stride matched to speed, planted feet, poses, aiming, break-apart |
 | `enemy.ts`, `civilian.ts` | gangsters (AI, stances, hostages); diners, the boss and his guards |
 | `weapons.ts`, `pieces.ts` | revolver, pistol, SMG built from baked pieces |
 | `levels.ts`, `props.ts`, `world.ts`, `theme.ts` | level data; geometry merged per material in two styles (clay, neon); baked shadows |

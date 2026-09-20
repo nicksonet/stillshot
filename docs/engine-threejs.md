@@ -46,3 +46,21 @@ accept the self-signed certificate, ENTER VR. `npm run build` is a compile gate 
 - Dresses and long coats break the rig (one arm chain, two-bone legs): generate trousers. Check the bone tree before paying for clips.
 - Retargeted clips can be broken (the boss bends double): look at them in the viewer; list such models in `NO_CLIPS`.
 - Models are meshopt-compressed: every `GLTFLoader` needs `setMeshoptDecoder(MeshoptDecoder)`.
+
+## Judging motion (frame by frame)
+
+`npm run motion` steps the game by exactly 1/30 s and screenshots every step, so animation is judged
+on frames and numbers rather than by eye. It writes `motion/<scene>.png` (contact sheet with frame
+numbers), `motion/<scene>.mp4` and `motion/report.json`:
+
+- `bench-*` scenes use the asset viewer (`viewer.html?drive=gangster&speed=1.4&motion=walk`): an empty
+  floor with markers, a side camera, and the game's own `Person` code. `&raw=1` switches the motion
+  fixes off for a before-and-after, `&drift=3.14` walks the body backwards while it faces the camera.
+- The other scenes play the real level; each waits for the movement it is about (`until`) so captures
+  are not a matter of luck.
+- Numbers per frame: the clip playing, ground speed, `drift` (travel versus facing), `footSlip` (how
+  fast the standing foot slides: 0 is a foot that stays put) and the step count.
+
+Traps this caught: enemies face the player while walking sideways or backwards, so a forward walk clip
+turned into a moonwalk; clips played at their own tempo regardless of speed; and the generated clips
+never plant a foot (`clipSpeeds()` shows the foot-speed spread — a real step cycle has p10 near zero).

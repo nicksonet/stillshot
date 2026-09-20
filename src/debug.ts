@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Game } from './game';
+import { personClipSpeeds } from './person';
 import type { EnemyKind } from './levels';
 import type { WeaponKind } from './weapons';
 
@@ -87,7 +88,61 @@ export function createDebugApi(g: Game) {
       const e = aliveEnemies()[i];
       if (e) g.combat.killEnemy(e, new THREE.Vector3(0, 0, -1));
     },
+    /** Measured stride speeds of every loaded clip (m/s). */
+    clipSpeeds: () => personClipSpeeds(),
+    /** Per-person motion telemetry, to read frame captures against numbers. */
+    motion: () => ({
+      enemies: aliveEnemies().map((e) => ({
+        kind: e.kind,
+        clip: e.body.motion,
+        speed: +e.body.groundSpeed.toFixed(2),
+        drift: +e.body.driftAngle.toFixed(2),
+        slip: +e.body.footSlip.toFixed(2),
+        steps: e.body.steps,
+        turn: +e.body.turn.toFixed(2),
+        yaw: +e.body.root.rotation.y.toFixed(2),
+      })),
+      civilians: liveCivilians().map((c) => ({
+        state: c.state,
+        clip: c.body.motion,
+        speed: +c.body.groundSpeed.toFixed(2),
+        drift: +c.body.driftAngle.toFixed(2),
+        slip: +c.body.footSlip.toFixed(2),
+      })),
+    }),
+    /** Put the viewpoint somewhere and look at a point (motion capture, demo shots). */
+    setCamera: (x: number, y: number, z: number, tx: number, ty: number, tz: number) => {
+      g.rig.position.set(x, y - 1.65, z);
+      g.updateHead();
+      g.desktop.lookAt(new THREE.Vector3(tx, ty, tz));
+      g.updateHead();
+    },
+    /** Camera parked at a spot, keeping its eye on a person (motion capture). */
+    watch: (who: 'enemy' | 'civilian', i: number, x: number, y: number, z: number) => {
+      const p = who === 'enemy' ? aliveEnemies()[i]?.spheres[1].c : liveCivilians()[i]?.spheres[1].c;
+      if (!p) return false;
+      g.rig.position.set(x, y - 1.65, z);
+      g.updateHead();
+      g.desktop.lookAt(p.clone());
+      g.updateHead();
+      return true;
+    },
+    /** Camera at a fixed offset from a person, looking at their chest (motion capture). */
+    follow: (who: 'enemy' | 'civilian', i: number, dx: number, dy: number, dz: number) => {
+      const p = who === 'enemy' ? aliveEnemies()[i]?.spheres[1].c : liveCivilians()[i]?.spheres[1].c;
+      if (!p) return false;
+      g.rig.position.set(p.x + dx, dy - 1.65, p.z + dz);
+      g.updateHead();
+      g.desktop.lookAt(p.clone());
+      g.updateHead();
+      return true;
+    },
     setTimeScale: (v: number | null) => (g.time.override = v),
+    /** Step every frame by a fixed amount of seconds, so captures sample even slices of motion. */
+    setFixedDt: (v: number | null) => (g.fixedDt = v),
+    setPaused: (on: boolean) => (g.paused = on),
+    panic: () => g.triggerPanic(),
+    step: (dt: number) => g.stepOnce(dt),
     setGodMode: (on: boolean) => (g.god = on),
     /** part: 0 head, 1 torso, 2 legs. Returns whether the view ray is clear of walls. */
     aimAtEnemy: (i = 0, part = 1) => {

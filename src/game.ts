@@ -63,6 +63,8 @@ export class Game {
   failReason: FailReason | null = null;
   mode: Mode = 'none';
   paused = false;
+  /** Fixed frame step in seconds for frame-by-frame capture (null: follow the clock). */
+  fixedDt: number | null = null;
   levelIndex = 0;
   enemies: Enemy[] = [];
   civilians: Civilian[] = [];
@@ -130,6 +132,17 @@ export class Game {
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     });
     this.renderer.setAnimationLoop(() => this.frame());
+  }
+
+  /** Run exactly one simulation frame of dt seconds (frame-by-frame capture while paused). */
+  stepOnce(dt: number): void {
+    const wasPaused = this.paused;
+    const fixed = this.fixedDt;
+    this.paused = false;
+    this.fixedDt = dt;
+    this.frame();
+    this.paused = wasPaused;
+    this.fixedDt = fixed;
   }
 
   debugApi() {
@@ -279,7 +292,8 @@ export class Game {
 
   private frame(): void {
     this.timer.update();
-    const realDt = Math.max(1e-4, Math.min(this.timer.getDelta(), 0.05));
+    // fixedDt: frame captures step the game by an exact amount instead of following the clock.
+    const realDt = this.fixedDt ?? Math.max(1e-4, Math.min(this.timer.getDelta(), 0.05));
     this.frameCount++;
 
     if (!this.paused && this.mode !== 'none') {

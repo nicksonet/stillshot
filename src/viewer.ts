@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { Person, loadPeople, stretchedTriangles, type Motion, type PersonModel, type Pose } from './person';
+import { Person, loadPeople, motionFixes, stretchedTriangles, type Motion, type PersonModel, type Pose } from './person';
 
 const params = new URLSearchParams(location.search);
 const files = (params.get('files') ?? '').split(',').filter(Boolean);
@@ -24,6 +24,7 @@ const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLamb
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
 const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 100);
+let paused = false;
 
 const mixers: THREE.AnimationMixer[] = [];
 const tickers: ((dt: number) => void)[] = [];
@@ -91,7 +92,60 @@ function stretched(mesh: THREE.SkinnedMesh, min: number): string[] {
   return [...new Set(stretchedTriangles(mesh, min).map((t) => [0, 1, 2].map((k) => main(index.getX(t + k))).join(' / ')))];
 }
 
+/**
+ * ?drive=gangster,diner-woman&speed=1.4&motion=walk&drift=0 — locomotion test bench: the people
+ * are pushed across an empty floor exactly as the game moves them, so the step cycle, the stride
+ * speed and the foot sliding can be judged on their own. `drift` turns the travel away from the
+ * facing (π means walking backwards), which is what enemies do when they reposition while aiming.
+ */
+async function drive(names: PersonModel[]) {
+  await loadPeople('/');
+  const speed = Number(params.get('speed') ?? 1.4);
+  const drift = Number(params.get('drift') ?? 0);
+  const motion = (params.get('motion') ?? 'walk') as Motion;
+  // ?raw=1 turns the motion fixes off, for before-and-after captures.
+  if (params.get('raw')) motionFixes.stride = motionFixes.plant = motionFixes.turn = false;
+  const people = names.map((n, i) => {
+    const p = new Person(n);
+    p.root.position.set((i - (names.length - 1) / 2) * spacing, 0, 0);
+    p.play(motion);
+    scene.add(p.root);
+    return p;
+  });
+  // Poles on the floor every 2 m, so travel and any foot sliding are visible against something.
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), new THREE.MeshLambertMaterial({ color: 0xb9ae9e }));
+  for (let i = -10; i <= 10; i++) {
+    const p = post.clone();
+    p.position.set(-1.6, 0.25, i * 2);
+    scene.add(p);
+  }
+  tickers.push((dt) => {
+    for (const p of people) {
+      p.root.position.x += Math.sin(drift) * speed * dt;
+      p.root.position.z += Math.cos(drift) * speed * dt;
+      p.play(motion);
+      p.update(dt);
+    }
+    // The camera rides along beside them.
+    const mid = people.reduce((s, p) => s + p.root.position.z, 0) / people.length;
+    camera.position.set(4.6, 1.15, mid + 0.5);
+    camera.lookAt(0, 0.95, mid);
+  });
+  const viewer = {
+    ready: true,
+    report: null as unknown,
+    step: (dt: number) => tick(dt),
+    pause: (on: boolean) => (paused = on),
+  };
+  Object.defineProperty(viewer, 'report', {
+    get: () => people.map((p, i) => ({ name: names[i], clip: p.motion, speed: +p.groundSpeed.toFixed(2), slip: +p.footSlip.toFixed(2), steps: p.steps, ik: +p.ikError.toFixed(3) })),
+  });
+  (window as unknown as { __viewer: unknown }).__viewer = viewer;
+}
+
 async function main() {
+  const driven = params.get('drive');
+  if (driven) return drive(driven.split(',') as PersonModel[]);
   const names = params.get('people');
   if (names) return people(names.split(',') as PersonModel[]);
   for (const [i, file] of files.entries()) {
@@ -129,11 +183,13 @@ async function main() {
 }
 
 const timer = new THREE.Timer();
-renderer.setAnimationLoop(() => {
-  timer.update();
-  const dt = timer.getDelta();
+const tick = (dt: number) => {
   for (const m of mixers) m.update(dt);
   for (const t of tickers) t(dt);
   renderer.render(scene, camera);
+};
+renderer.setAnimationLoop(() => {
+  timer.update();
+  tick(paused ? 0 : timer.getDelta());
 });
 void main();
