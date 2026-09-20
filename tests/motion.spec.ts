@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 type Bench = {
   ready: boolean;
-  report: { name: string; clip: string; speed: number; slip: number; steps: number }[];
+  report: { name: string; clip: string; speed: number; slip: number; steps: number; drive: number }[];
   step(dt: number): void;
   pause(on: boolean): void;
 };
@@ -21,15 +21,18 @@ async function bench(page: import('@playwright/test').Page, query: string) {
     window.__viewer.pause(true);
     for (let i = 0; i < 40; i++) window.__viewer.step(1 / 30);
     const slips: number[] = [];
+    const drives: number[] = [];
     const before = window.__viewer.report[0].steps;
     for (let i = 0; i < 60; i++) {
       window.__viewer.step(1 / 30);
       slips.push(window.__viewer.report[0].slip);
+      drives.push(window.__viewer.report[0].drive);
     }
     return {
       clip: window.__viewer.report[0].clip,
       steps: window.__viewer.report[0].steps - before,
       slip: slips.reduce((a, b) => a + b, 0) / slips.length,
+      drive: drives.reduce((a, b) => a + b, 0) / drives.length,
     };
   });
 }
@@ -39,10 +42,13 @@ async function bench(page: import('@playwright/test').Page, query: string) {
 test('walking and running take steps without sliding', async ({ page }) => {
   const walk = await bench(page, 'drive=gangster&speed=1.4&motion=walk');
   expect(walk.steps).toBeGreaterThan(2);
+  // The swinging foot must travel forwards; a negative score is legs walking the wrong way.
+  expect(walk.drive).toBeGreaterThan(0.8);
   expect(walk.slip).toBeLessThan(0.6);
 
   const run = await bench(page, 'drive=diner-man&speed=2.6&motion=run');
   expect(run.steps).toBeGreaterThan(3);
+  expect(run.drive).toBeGreaterThan(0.6);
   expect(run.slip).toBeLessThan(0.6);
 
   const raw = await bench(page, 'drive=gangster&speed=1.4&motion=walk&raw=1');

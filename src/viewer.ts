@@ -115,6 +115,13 @@ async function drive(names: PersonModel[]) {
     scene.add(p.root);
     return p;
   });
+  // A red arrow on the floor pointing where the body is travelling: facing and travel must agree.
+  const arrow = new THREE.Mesh(
+    new THREE.ConeGeometry(0.09, 0.3, 8).rotateX(Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0xd42a1a }),
+  );
+  arrow.position.y = 0.03;
+  scene.add(arrow);
   // Poles on the floor every 2 m, so travel and any foot sliding are visible against something.
   const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.5, 0.05), new THREE.MeshLambertMaterial({ color: 0xb9ae9e }));
   for (let i = -10; i <= 10; i++) {
@@ -131,6 +138,8 @@ async function drive(names: PersonModel[]) {
     }
     // The camera rides along beside them.
     const mid = people.reduce((s, p) => s + p.root.position.z, 0) / people.length;
+    arrow.position.set(people[0].root.position.x, 0.03, people[0].root.position.z + 0.55 * Math.cos(drift));
+    arrow.rotation.y = drift;
     camera.position.set(dist, 1.05, mid + 0.35);
     camera.lookAt(0, 0.95, mid);
   });
@@ -141,7 +150,7 @@ async function drive(names: PersonModel[]) {
     pause: (on: boolean) => (paused = on),
   };
   Object.defineProperty(viewer, 'report', {
-    get: () => people.map((p, i) => ({ name: names[i], clip: p.motion, speed: +p.groundSpeed.toFixed(2), slip: +p.footSlip.toFixed(2), steps: p.steps, ik: +p.ikError.toFixed(3) })),
+    get: () => people.map((p, i) => ({ name: names[i], clip: p.motion, speed: +p.groundSpeed.toFixed(2), slip: +p.footSlip.toFixed(2), steps: p.steps, drive: +p.swingDrive.toFixed(2) })),
   });
   (window as unknown as { __viewer: unknown }).__viewer = viewer;
 }

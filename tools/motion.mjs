@@ -38,7 +38,7 @@ const SCENARIOS = [
   {
     name: 'bench-walk',
     note: 'locomotion bench: walking at 1.4 m/s, side view',
-    bench: 'drive=gangster&speed=1.4&motion=walk&dist=2.6',
+    bench: 'drive=gangster&speed=1.4&motion=walk&dist=4.2',
   },
   {
     name: 'bench-run',

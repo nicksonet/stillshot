@@ -74,3 +74,13 @@ cannot reach), each foot is set down and left in world space for its stance, the
 footfall, arms swing against the legs, pelvis and shoulders counter-rotate, the body dips twice a cycle and
 leans into a run. Idle and hurt still come from the clips. `motionFixes` switches each piece off for
 before-and-after captures, and `viewer.html?drive=gangster&speed=1.4&motion=walk&raw=1` shows the clips alone.
+
+### Trap: shared scratch vectors
+
+`person.ts` keeps module-level scratch vectors (`_p0`, `_p1`, `_d`, …) to avoid allocating per frame.
+Anything that survives across a call into a helper must be its own vector: the walk once took its
+forward direction from `_d`, which `point()` overwrote on the first bone it rotated, so the legs swung
+towards a garbage direction and jittered. `point()` now works on private scratch of its own and copies
+the direction it is given, but the rule stands for anything else: never hold a shared temporary across
+a call. The frame capture reports `drive` (how squarely the swinging foot travels forwards, 1 is
+straight ahead) so this fails a test instead of being argued about from screenshots.

@@ -42,6 +42,11 @@ interface Chain {
 const _p0 = new THREE.Vector3();
 const _p1 = new THREE.Vector3();
 const _d = new THREE.Vector3();
+// Scratch vectors used only inside point(), so a caller can safely pass one of the shared ones.
+const _b0 = new THREE.Vector3();
+const _b1 = new THREE.Vector3();
+const _b2 = new THREE.Vector3();
+const _bd = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _qw = new THREE.Quaternion();
 const _qp = new THREE.Quaternion();
@@ -152,6 +157,9 @@ export class Person {
   /** How fast the planted foot slides over the floor (m/s): 0 means the stride matches the speed. */
   footSlip = 0;
   private lastFoot = new THREE.Vector3();
+  private lastSwing = new THREE.Vector3();
+  /** Which way the swinging foot travels: 1 straight forwards, negative means the legs go the wrong way. */
+  swingDrive = 0;
   /** The walk built from speed: where each foot stands, where its swing started, and the phase. */
   private footAt = [new THREE.Vector3(), new THREE.Vector3()];
   private swingFrom = [new THREE.Vector3(), new THREE.Vector3()];
@@ -426,7 +434,8 @@ export class Person {
     const was = this.phase;
     this.phase = (this.phase + cadence * dt) % 1;
 
-    const fwd = _d.set(Math.sin(this.travelYaw), 0, Math.cos(this.travelYaw));
+    // Its own vector: every bone rotation below goes through point(), which reuses the shared temporaries.
+    const fwd = new THREE.Vector3(Math.sin(this.travelYaw), 0, Math.cos(this.travelYaw));
     const side = new THREE.Vector3(fwd.z, 0, -fwd.x);
     const hip = this.hips.getWorldPosition(new THREE.Vector3());
 
@@ -467,21 +476,16 @@ export class Person {
 
     // Arms swing against the legs, pelvis and shoulders counter-rotate, and the body dips twice a cycle.
     const swing = Math.sin(this.phase * Math.PI * 2);
-    const reachOut = (0.62 + 0.35 * run) * Math.min(1.4, v / 1.4);
+    // Shoulders swing about 30° walking and 45° running; the elbow folds in front by roughly as much again.
+    const reachOut = (0.5 + 0.35 * run) * Math.min(1.3, v / 1.4);
+    const bend = -(0.55 + 0.95 * run);
     for (const [i, arm] of [this.armR, this.armL].entries()) {
       const s = (i === 0 ? -1 : 1) * swing * reachOut;
-      const out = (i === 0 ? -1 : 1) * 0.12;
+      const out = (i === 0 ? -1 : 1) * (0.12 - 0.07 * run); // a run keeps the elbows in
       const upper = new THREE.Vector3(0, -1, 0).addScaledVector(fwd, s).addScaledVector(side, out).normalize();
-      const lower = new THREE.Vector3(0, -1, 0)
-        .addScaledVector(fwd, s * 0.5 + 0.3)
-        .addScaledVector(side, out * 0.5)
-        .normalize();
-      // Running folds the forearm up towards the chest instead of letting it hang.
-      const folded = new THREE.Vector3(0, 0.45, 0)
-        .addScaledVector(fwd, s * 0.7 + 0.55)
-        .addScaledVector(side, out)
-        .normalize();
-      this.limb(arm, upper, lower.lerp(folded, run).normalize());
+      // The forearm follows the upper arm, folded forwards around the elbow rather than aimed on its own.
+      const lower = upper.clone().applyQuaternion(_q.setFromAxisAngle(side, bend));
+      this.limb(arm, upper, lower);
     }
     this.twist(this.hips, swing * 0.12);
     this.twist(this.chest, -swing * 0.16);
@@ -490,9 +494,17 @@ export class Person {
 
     // Sliding, measured on whichever foot is standing (it should be nailed to the floor).
     const stance = this.phase % 1 < duty ? 0 : 1;
+    const same = this.stance === stance;
     (stance === 0 ? this.legR : this.legL).c.getWorldPosition(_p1);
-    this.footSlip = dt > 1e-5 && this.stance === stance ? Math.hypot(_p1.x - this.lastFoot.x, _p1.z - this.lastFoot.z) / dt : 0;
+    this.footSlip = dt > 1e-5 && same ? Math.hypot(_p1.x - this.lastFoot.x, _p1.z - this.lastFoot.z) / dt : 0;
     this.lastFoot.copy(_p1);
+    // And where the other foot is headed: 1 is straight forwards, -1 is a leg walking backwards.
+    (stance === 0 ? this.legL : this.legR).c.getWorldPosition(_p0);
+    const dx = _p0.x - this.lastSwing.x;
+    const dz = _p0.z - this.lastSwing.z;
+    const len = Math.hypot(dx, dz);
+    if (same && len > 1e-3) this.swingDrive = (dx * fwd.x + dz * fwd.z) / len;
+    this.lastSwing.copy(_p0);
     this.stance = stance;
   }
 
@@ -620,14 +632,18 @@ export class Person {
     return new THREE.Vector3(x, y, z).normalize().applyQuaternion(this.root.getWorldQuaternion(_qw));
   }
 
-  /** Rotate a bone (in world space) so that the segment towards `child` points along `dir`. */
+  /**
+   * Rotate a bone (in world space) so that the segment towards `child` points along `dir`.
+   * Works on its own scratch vectors, so callers may hand it any of the shared ones.
+   */
   private point(bone: THREE.Bone, child: THREE.Bone, dir: THREE.Vector3, amount = 1): void {
-    bone.getWorldPosition(_p0);
-    child.getWorldPosition(_p1);
-    _d.subVectors(_p1, _p0);
-    if (_d.lengthSq() < 1e-8) return;
-    _d.normalize();
-    _q.setFromUnitVectors(_d, dir);
+    const want = _bd.copy(dir);
+    bone.getWorldPosition(_b0);
+    child.getWorldPosition(_b1);
+    _b2.subVectors(_b1, _b0);
+    if (_b2.lengthSq() < 1e-8) return;
+    _b2.normalize();
+    _q.setFromUnitVectors(_b2, want);
     if (amount < 1) _q.slerp(new THREE.Quaternion(), 1 - amount);
     bone.getWorldQuaternion(_qw).premultiply(_q);
     (bone.parent as THREE.Object3D).getWorldQuaternion(_qp).invert();

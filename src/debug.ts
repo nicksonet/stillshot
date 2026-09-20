@@ -99,6 +99,7 @@ export function createDebugApi(g: Game) {
         drift: +e.body.driftAngle.toFixed(2),
         slip: +e.body.footSlip.toFixed(2),
         steps: e.body.steps,
+        drive: +e.body.swingDrive.toFixed(2),
         turn: +e.body.turn.toFixed(2),
         yaw: +e.body.root.rotation.y.toFixed(2),
       })),
@@ -108,6 +109,7 @@ export function createDebugApi(g: Game) {
         speed: +c.body.groundSpeed.toFixed(2),
         drift: +c.body.driftAngle.toFixed(2),
         slip: +c.body.footSlip.toFixed(2),
+        drive: +c.body.swingDrive.toFixed(2),
       })),
     }),
     /** Put the viewpoint somewhere and look at a point (motion capture, demo shots). */
