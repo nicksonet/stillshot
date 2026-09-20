@@ -22,11 +22,12 @@ const MAX_RANGE = 70;
 const headGeo = new THREE.CylinderGeometry(0.014, 0.014, 0.07, 6).rotateX(Math.PI / 2);
 // Trail spans z = 0..1 behind the bullet (bullets fly along local -Z).
 const trailGeo = new THREE.CylinderGeometry(0.003, 0.014, 1, 6, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
-const headMat = new THREE.MeshBasicMaterial({ color: 0xfff2e0, fog: false });
+// Bullets read as black ink against the clay room, so the trail is drawn dark instead of glowing.
+const headMat = new THREE.MeshBasicMaterial({ color: 0x0b0b0c, fog: false });
 const trail = (color: number, opacity: number) =>
-  new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
-const enemyTrailMat = trail(0xff3344, 0.8);
-const playerTrailMat = trail(0x19f0ff, 0.6);
+  new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, fog: false });
+const enemyTrailMat = trail(0x14110f, 0.75);
+const playerTrailMat = trail(0x1b1a18, 0.55);
 const FORWARD = new THREE.Vector3(0, 0, -1);
 
 export class Bullets {
